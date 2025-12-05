@@ -3,6 +3,12 @@ import argparse
 import datetime as dt
 import json
 import os
+
+try:
+    import psycopg2
+except ImportError:
+    psycopg2 = None
+
 import sqlite3
 import time
 from typing import Dict, Any, Iterable
@@ -16,36 +22,22 @@ import yaml
 # ------------------------------------------------------------
 
 def load_config(path: str = "config.yaml") -> Dict[str, Any]:
-    """
-    Load main config.yaml, then (optionally) merge in secrets from a separate
-    secrets file, so callers can still do:
-      cfg["tenable"]["access_key"]
-      cfg["tenable"]["secret_key"]
-      cfg["database"]["user"]
-      cfg["database"]["password"]
-    """
-    # Load main config
     with open(path, "r") as f:
         cfg = yaml.safe_load(f) or {}
 
-    # Check if a secrets file is referenced
+    # Optional: merge secrets if you’ve already added secrets_file support
     secrets_rel = cfg.get("secrets_file")
     if secrets_rel:
         base_dir = os.path.dirname(os.path.abspath(path))
         secrets_path = os.path.join(base_dir, secrets_rel)
-
         if not os.path.isfile(secrets_path):
             raise FileNotFoundError(f"Secrets file not found: {secrets_path}")
-
         with open(secrets_path, "r") as sf:
             secrets = yaml.safe_load(sf) or {}
 
-        # Merge Tenable creds
         if "tenable" in secrets:
             cfg.setdefault("tenable", {})
             cfg["tenable"].update(secrets["tenable"])
-
-        # Merge DB creds
         if "database" in secrets:
             cfg.setdefault("database", {})
             cfg["database"].update(secrets["database"])
@@ -53,60 +45,201 @@ def load_config(path: str = "config.yaml") -> Dict[str, Any]:
     return cfg
 
 
-def init_db(db_path: str):
-    """
-    SQLite init – still used for legacy / local DB if configured.
-    Postgres is handled separately in the migration / PG writer.
-    """
-    conn = sqlite3.connect(db_path)
+def db_engine(cfg: Dict[str, Any]) -> str:
+    return (cfg.get("database", {}).get("engine") or "sqlite").lower()
+
+
+def db_connect(cfg: Dict[str, Any]):
+    engine = db_engine(cfg)
+
+    if engine == "postgres":
+        if psycopg2 is None:
+            raise RuntimeError("psycopg2 is not installed in this venv")
+        db = cfg["database"]
+        conn = psycopg2.connect(
+            host=db.get("host", "127.0.0.1"),
+            port=db.get("port", 5432),
+            dbname=db.get("name", "tenable_trends"),
+            user=db.get("user", "tenable_trends_user"),
+            password=db.get("password"),
+        )
+        return conn
+
+    # default: sqlite
+    db_path = cfg["reporting"]["db_path"]
+    return sqlite3.connect(db_path)
+
+
+def init_db(cfg: Dict[str, Any]):
+    conn = db_connect(cfg)
     c = conn.cursor()
 
-    # Daily site severity counts
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS daily_site_metrics (
-        snapshot_date TEXT NOT NULL,
-        site_label TEXT NOT NULL,
-        site_tag TEXT NOT NULL,
-        crit INTEGER NOT NULL,
-        high INTEGER NOT NULL,
-        medium INTEGER NOT NULL,
-        low INTEGER NOT NULL,
-        total INTEGER NOT NULL,
-        remote_no_auth_crit INTEGER NOT NULL,
-        remote_no_auth_high INTEGER NOT NULL,
-        endpoints INTEGER NOT NULL,
-        PRIMARY KEY (snapshot_date, site_label)
-    );
-    """)
+    engine = db_engine(cfg)
 
-    # Daily SLA metrics
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS daily_sla_metrics (
-        snapshot_date TEXT NOT NULL,
-        site_label TEXT NOT NULL,
-        site_tag TEXT NOT NULL,
-        risk TEXT NOT NULL,
-        total_vulns INTEGER NOT NULL,
-        sla_breaches INTEGER NOT NULL,
-        remote_no_auth_vulns INTEGER NOT NULL,
-        remote_no_auth_breaches INTEGER NOT NULL,
-        PRIMARY KEY (snapshot_date, site_label, risk)
-    );
-    """)
+    if engine == "postgres":
+        # postgres: no IF NOT EXISTS on PK, but table IF NOT EXISTS is fine
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS daily_site_metrics (
+            snapshot_date TEXT NOT NULL,
+            site_label    TEXT NOT NULL,
+            site_tag      TEXT NOT NULL,
+            crit          INTEGER NOT NULL,
+            high          INTEGER NOT NULL,
+            medium        INTEGER NOT NULL,
+            low           INTEGER NOT NULL,
+            total         INTEGER NOT NULL,
+            remote_crit   INTEGER NOT NULL,
+            remote_high   INTEGER NOT NULL,
+            assets        INTEGER NOT NULL,
+            PRIMARY KEY (snapshot_date, site_label)
+        );
+        """)
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS daily_sla_metrics (
+            snapshot_date         TEXT NOT NULL,
+            site_label            TEXT NOT NULL,
+            site_tag              TEXT NOT NULL,
+            risk                  TEXT NOT NULL,
+            total_vulns           INTEGER NOT NULL,
+            sla_breaches          INTEGER NOT NULL,
+            remote_no_auth_vulns  INTEGER NOT NULL,
+            remote_no_auth_breaches INTEGER NOT NULL,
+            PRIMARY KEY (snapshot_date, site_label, risk)
+        );
+        """)
+    else:
+        # sqlite schema identical
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS daily_site_metrics (
+            snapshot_date TEXT NOT NULL,
+            site_label TEXT NOT NULL,
+            site_tag TEXT NOT NULL,
+            crit INTEGER NOT NULL,
+            high INTEGER NOT NULL,
+            medium INTEGER NOT NULL,
+            low INTEGER NOT NULL,
+            total INTEGER NOT NULL,
+            remote_crit INTEGER NOT NULL,
+            remote_high INTEGER NOT NULL,
+            assets INTEGER NOT NULL,
+            PRIMARY KEY (snapshot_date, site_label)
+        );
+        """)
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS daily_sla_metrics (
+            snapshot_date TEXT NOT NULL,
+            site_label TEXT NOT NULL,
+            site_tag TEXT NOT NULL,
+            risk TEXT NOT NULL,
+            total_vulns INTEGER NOT NULL,
+            sla_breaches INTEGER NOT NULL,
+            remote_no_auth_vulns INTEGER NOT NULL,
+            remote_no_auth_breaches INTEGER NOT NULL,
+            PRIMARY KEY (snapshot_date, site_label, risk)
+        );
+        """)
 
     conn.commit()
     conn.close()
 
 
-def prune_old(db_path: str, retention_days: int):
+def prune_old(cfg: Dict[str, Any], retention_days: int):
     if retention_days <= 0:
         return
-    cutoff = (dt.date.today() - dt.timedelta(days=retention_days)).isoformat()
 
-    conn = sqlite3.connect(db_path)
+    cutoff = (dt.date.today() - dt.timedelta(days=retention_days)).isoformat()
+    conn = db_connect(cfg)
     c = conn.cursor()
-    c.execute("DELETE FROM daily_site_metrics WHERE snapshot_date < ?", (cutoff,))
-    c.execute("DELETE FROM daily_sla_metrics WHERE snapshot_date < ?", (cutoff,))
+
+    if db_engine(cfg) == "postgres":
+        c.execute("DELETE FROM daily_site_metrics WHERE snapshot_date < %s", (cutoff,))
+        c.execute("DELETE FROM daily_sla_metrics WHERE snapshot_date < %s", (cutoff,))
+    else:
+        c.execute("DELETE FROM daily_site_metrics WHERE snapshot_date < ?", (cutoff,))
+        c.execute("DELETE FROM daily_sla_metrics WHERE snapshot_date < ?", (cutoff,))
+
+    conn.commit()
+    conn.close()
+
+
+def write_site(cfg: Dict[str, Any], date, data, tag_lookup, ungrouped):
+    conn = db_connect(cfg)
+    c = conn.cursor()
+    engine = db_engine(cfg)
+
+    for lab, d in data.items():
+        crit = d["crit"]; high = d["high"]; med = d["medium"]; low = d["low"]
+        total = crit + high + med + low
+        tag = tag_lookup.get(lab, "UNGROUPED" if lab == ungrouped else lab)
+
+        params = (date, lab, tag, crit, high, med, low, total,
+                  d["remote_crit"], d["remote_high"], len(d["assets"]))
+
+        if engine == "postgres":
+            c.execute("""
+            INSERT INTO daily_site_metrics
+              (snapshot_date, site_label, site_tag,
+               crit, high, medium, low, total,
+               remote_crit, remote_high, assets)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (snapshot_date, site_label)
+            DO UPDATE SET
+              site_tag     = EXCLUDED.site_tag,
+              crit         = EXCLUDED.crit,
+              high         = EXCLUDED.high,
+              medium       = EXCLUDED.medium,
+              low          = EXCLUDED.low,
+              total        = EXCLUDED.total,
+              remote_crit  = EXCLUDED.remote_crit,
+              remote_high  = EXCLUDED.remote_high,
+              assets       = EXCLUDED.assets;
+            """, params)
+        else:
+            c.execute("""
+            INSERT OR REPLACE INTO daily_site_metrics
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, params)
+
+    conn.commit()
+    conn.close()
+
+
+def write_sla(cfg: Dict[str, Any], date, sla_data, tag_lookup, ungrouped):
+    conn = db_connect(cfg)
+    c = conn.cursor()
+    engine = db_engine(cfg)
+
+    for lab, risks in sla_data.items():
+        tag = tag_lookup.get(lab, "UNGROUPED" if lab == ungrouped else lab)
+
+        for risk, d in risks.items():
+            params = (
+                date, lab, tag, risk,
+                d["total"], d["breaches"],
+                d["remote_total"], d["remote_breaches"],
+            )
+
+            if engine == "postgres":
+                c.execute("""
+                INSERT INTO daily_sla_metrics
+                  (snapshot_date, site_label, site_tag, risk,
+                   total_vulns, sla_breaches,
+                   remote_no_auth_vulns, remote_no_auth_breaches)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (snapshot_date, site_label, risk)
+                DO UPDATE SET
+                  site_tag              = EXCLUDED.site_tag,
+                  total_vulns           = EXCLUDED.total_vulns,
+                  sla_breaches          = EXCLUDED.sla_breaches,
+                  remote_no_auth_vulns  = EXCLUDED.remote_no_auth_vulns,
+                  remote_no_auth_breaches = EXCLUDED.remote_no_auth_breaches;
+                """, params)
+            else:
+                c.execute("""
+                INSERT OR REPLACE INTO daily_sla_metrics
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, params)
+
     conn.commit()
     conn.close()
 
@@ -620,8 +753,8 @@ def main():
     cfg = load_config(args.config)
     db_path = cfg["reporting"]["db_path"]
 
-    init_db(db_path)
-    prune_old(db_path, cfg["reporting"]["retention_days"])
+    init_db(cfg)
+    prune_old(cfg, cfg["reporting"]["retention_days"])
 
     sess = tenable_session(
         cfg["tenable"]["base_url"],
@@ -640,8 +773,8 @@ def main():
         print(f"[site] {lab:12s} crit={d['crit']:5d} high={d['high']:5d} "
               f"med={d['medium']:5d} low={d['low']:5d} total={d['crit']+d['high']+d['medium']+d['low']}")
         
-    write_site(db_path, date, overall, label_to_tag, ungrouped)
-    write_sla(db_path, date, sla_data, label_to_tag, ungrouped)
+    write_site(cfg, date, overall, label_to_tag, ungrouped)
+    write_sla(cfg, date, sla_data, label_to_tag, ungrouped)
 
     print("[+] Done.")
 
