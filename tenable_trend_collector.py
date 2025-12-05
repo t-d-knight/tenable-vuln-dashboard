@@ -2,6 +2,7 @@
 import argparse
 import datetime as dt
 import json
+import os
 import sqlite3
 import time
 from typing import Dict, Any, Iterable
@@ -15,11 +16,48 @@ import yaml
 # ------------------------------------------------------------
 
 def load_config(path: str = "config.yaml") -> Dict[str, Any]:
+    """
+    Load main config.yaml, then (optionally) merge in secrets from a separate
+    secrets file, so callers can still do:
+      cfg["tenable"]["access_key"]
+      cfg["tenable"]["secret_key"]
+      cfg["database"]["user"]
+      cfg["database"]["password"]
+    """
+    # Load main config
     with open(path, "r") as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f) or {}
+
+    # Check if a secrets file is referenced
+    secrets_rel = cfg.get("secrets_file")
+    if secrets_rel:
+        base_dir = os.path.dirname(os.path.abspath(path))
+        secrets_path = os.path.join(base_dir, secrets_rel)
+
+        if not os.path.isfile(secrets_path):
+            raise FileNotFoundError(f"Secrets file not found: {secrets_path}")
+
+        with open(secrets_path, "r") as sf:
+            secrets = yaml.safe_load(sf) or {}
+
+        # Merge Tenable creds
+        if "tenable" in secrets:
+            cfg.setdefault("tenable", {})
+            cfg["tenable"].update(secrets["tenable"])
+
+        # Merge DB creds
+        if "database" in secrets:
+            cfg.setdefault("database", {})
+            cfg["database"].update(secrets["database"])
+
+    return cfg
 
 
 def init_db(db_path: str):
+    """
+    SQLite init – still used for legacy / local DB if configured.
+    Postgres is handled separately in the migration / PG writer.
+    """
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
 
