@@ -1,0 +1,61 @@
+tenable:
+  base_url: "https://cloud.tenable.com"
+  # access_key / secret_key are loaded from secrets.yaml
+
+reporting:
+  days_last_seen: 30
+  vuln_published_older_than_days: 30
+  require_exploit_for_remote_no_auth: true
+  retention_days: 540
+  db_path: "tenable_trends.sqlite"  # still used for legacy / fallback
+
+sites:
+  - key: "BDH-Site"
+    label: "BDH"
+  - key: "BH-Site"
+    label: "BH"
+  - key: "HH-Site"
+    label: "HH"
+  - key: "DH-Site"
+    label: "DH"
+  - key: "CDH-Site"
+    label: "CDH"
+  - key: "ERH-Site"
+    label: "ERH"
+  - key: "MDHS-Site"
+    label: "MDHS"
+  - key: "IDHS-Site"
+    label: "IDHS"
+  - key: "MBPH-Site"
+    label: "MBPH"
+  - key: "KDH-Site"
+    label: "KDH"
+  - key: "SHDH-Site"
+    label: "SHDH"
+  - key: "REDHS-Site"
+    label: "REDHS"
+  - key: "RDHS-Site"
+    label: "RDHS"
+  - key: "MTHCS-Site"
+    label: "MTHCS"
+  - key: "LMSS-Site"
+    label: "LMSS"
+
+ungrouped_label: "Ungrouped"
+
+tags:
+  site_category: "Sites"
+  asset_type_category: "AssetType"
+  internet_values: ["InternetFacing"]
+  server_values: ["Server"]
+  workstation_values: ["Workstation"]
+
+database:
+  engine: "postgres"
+  host: "127.0.0.1"
+  port: 5432
+  name: "tenable_trends"
+  # user / password will be loaded from secrets.yaml
+
+# Path to your secrets file (relative to this config file)
+secrets_file: "secrets.yaml"
