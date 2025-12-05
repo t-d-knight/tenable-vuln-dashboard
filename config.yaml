@@ -7,7 +7,6 @@ reporting:
   vuln_published_older_than_days: 30
   require_exploit_for_remote_no_auth: false
   retention_days: 540
-  db_path: "tenable_trends.sqlite"  # still used for legacy / fallback
 
 sites:
   - key: "BDH-Site"
