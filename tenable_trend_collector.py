@@ -679,43 +679,89 @@ def collect(sess, cfg):
 
 
 # ------------------------------------------------------------
-#   WRITE OUTPUT
+#   WRITE OUTPUT (Postgres)
 # ------------------------------------------------------------
 
-def write_site(db_path, date, data, tag_lookup, ungrouped):
-    conn = sqlite3.connect(db_path)
-    c = conn.cursor()
+def write_site(cfg: Dict[str, Any], date: str, data, tag_lookup, ungrouped: str):
+    """
+    Write per-site severity counts into Postgres.
+
+    Uses ON CONFLICT so re-running the collector for the same date overwrites
+    that day’s row instead of duplicating it.
+    """
+    conn = pg_connect(cfg)
+    cur = conn.cursor()
 
     for lab, d in data.items():
-        crit = d["crit"]; high = d["high"]; med = d["medium"]; low = d["low"]
+        crit = d["crit"]
+        high = d["high"]
+        med  = d["medium"]
+        low  = d["low"]
         total = crit + high + med + low
 
         tag = tag_lookup.get(lab, "UNGROUPED" if lab == ungrouped else lab)
 
-        c.execute("""
-        INSERT OR REPLACE INTO daily_site_metrics
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (date, lab, tag, crit, high, med, low, total,
-              d["remote_crit"], d["remote_high"], len(d["assets"])))
+        params = (
+            date, lab, tag,
+            crit, high, med, low, total,
+            d["remote_crit"], d["remote_high"],
+            len(d["assets"]),
+        )
+
+        cur.execute("""
+        INSERT INTO daily_site_metrics
+          (snapshot_date, site_label, site_tag,
+           crit, high, medium, low, total,
+           remote_crit, remote_high, assets)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (snapshot_date, site_label)
+        DO UPDATE SET
+          site_tag     = EXCLUDED.site_tag,
+          crit         = EXCLUDED.crit,
+          high         = EXCLUDED.high,
+          medium       = EXCLUDED.medium,
+          low          = EXCLUDED.low,
+          total        = EXCLUDED.total,
+          remote_crit  = EXCLUDED.remote_crit,
+          remote_high  = EXCLUDED.remote_high,
+          assets       = EXCLUDED.assets;
+        """, params)
 
     conn.commit()
     conn.close()
 
 
-def write_sla(db_path, date, sla_data, tag_lookup, ungrouped):
-    conn = sqlite3.connect(db_path)
-    c = conn.cursor()
+def write_sla(cfg: Dict[str, Any], date: str, sla_data, tag_lookup, ungrouped: str):
+    """
+    Write per-site SLA metrics into Postgres.
+    """
+    conn = pg_connect(cfg)
+    cur = conn.cursor()
 
     for lab, risks in sla_data.items():
         tag = tag_lookup.get(lab, "UNGROUPED" if lab == ungrouped else lab)
 
         for risk, d in risks.items():
-            c.execute("""
-            INSERT OR REPLACE INTO daily_sla_metrics
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (date, lab, tag, risk,
-                  d["total"], d["breaches"],
-                  d["remote_total"], d["remote_breaches"]))
+            params = (
+                date, lab, tag, risk,
+                d["total"], d["breaches"],
+                d["remote_total"], d["remote_breaches"],
+            )
+
+            cur.execute("""
+            INSERT INTO daily_sla_metrics
+              (snapshot_date, site_label, site_tag, risk,
+               total_vulns, sla_breaches,
+               remote_no_auth_vulns, remote_no_auth_breaches)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (snapshot_date, site_label, risk)
+            DO UPDATE SET
+              site_tag                = EXCLUDED.site_tag,
+              total_vulns             = EXCLUDED.total_vulns,
+              sla_breaches            = EXCLUDED.sla_breaches,
+              remote_no_auth_vulns    = EXCLUDED.remote_no_auth_vulns,
+              remote_no_auth_breaches = EXCLUDED.remote_no_auth_breaches;
+            """, params)
 
     conn.commit()
     conn.close()
@@ -731,11 +777,12 @@ def main():
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    db_path = cfg["reporting"]["db_path"]
 
+    # DB housekeeping
     init_db(cfg)
     prune_old(cfg, cfg["reporting"]["retention_days"])
 
+    # Tenable session
     sess = tenable_session(
         cfg["tenable"]["base_url"],
         cfg["tenable"]["access_key"],
@@ -743,21 +790,25 @@ def main():
     )
 
     date = dt.date.today().isoformat()
-
     print(f"[+] Beginning snapshot for {date}")
 
     overall, sla_data, site_cfg, ungrouped = collect(sess, cfg)
     label_to_tag = {v: k for k, v in site_cfg.items()}
 
     for lab, d in overall.items():
-        print(f"[site] {lab:12s} crit={d['crit']:5d} high={d['high']:5d} "
-              f"med={d['medium']:5d} low={d['low']:5d} total={d['crit']+d['high']+d['medium']+d['low']}")
-        
-write_site(cfg, date, overall, label_to_tag, ungrouped)
-write_sla(cfg, date, sla_data, label_to_tag, ungrouped)
+        print(
+            f"[site] {lab:12s} crit={d['crit']:5d} high={d['high']:5d} "
+            f"med={d['medium']:5d} low={d['low']:5d} "
+            f"total={d['crit']+d['high']+d['medium']+d['low']}"
+        )
+
+    # Write to Postgres
+    write_site(cfg, date, overall, label_to_tag, ungrouped)
+    write_sla(cfg, date, sla_data, label_to_tag, ungrouped)
 
     print("[+] Done.")
 
 
 if __name__ == "__main__":
     main()
+
