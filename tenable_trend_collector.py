@@ -376,6 +376,31 @@ def extract_cvss_vector(plugin: Dict[str, Any]) -> Any:
 
     return None
 
+def severity_band(finding) -> str | None:
+    """
+    Derive 'critical'/'high'/'medium'/'low' from CVSS score,
+    so both site metrics and SLA use the same maths.
+    """
+    cvss = get_cvss_score(finding)
+    if cvss is None:
+        return None
+
+    try:
+        score = float(cvss)
+    except (TypeError, ValueError):
+        return None
+
+    if score >= 9.0:
+        return "critical"
+    elif score >= 7.0:
+        return "high"
+    elif score >= 4.0:
+        return "medium"
+    elif score > 0:
+        return "low"
+    else:
+        return None
+
 
 def is_remote_no_auth(finding: Dict[str, Any], require_exploit=True) -> bool:
     plugin = finding.get("plugin", {}) or {}
@@ -541,17 +566,6 @@ def asset_type(asset: Dict[str, Any], tag_cfg: Dict[str, Any]) -> str:
 
     return "unknown"
 
-
-def risk_map(asset_type: str, cvss: float) -> str:
-    if cvss >= 9.0:
-        return "Critical"
-    if 7.0 <= cvss <= 8.9:
-        return "High"
-    if 4.0 <= cvss <= 6.9:
-        return "Medium"
-    return "Low"
-
-
 def sla_days(risk: str) -> int:
     return {"Critical": 2, "High": 14, "Medium": 30, "Low": 60}.get(risk, 60)
 
@@ -623,13 +637,9 @@ def site_label(asset: Dict[str, Any], site_cfg, tag_cfg, ungrouped: str) -> str:
 #   MAIN COLLECTION LOGIC
 # ------------------------------------------------------------
 
-def collect(sess: requests.Session, cfg: Dict[str, Any]):
+def collect(sess, cfg):
     total_seen = 0
     total_with_sev = 0
-    def collect(sess, cfg):
-        total_seen = 0
-        total_with_sev = 0
-        remote_counter = 0  # NEW
 
     asset_tags = fetch_all_assets(sess)
 
@@ -641,27 +651,22 @@ def collect(sess: requests.Session, cfg: Dict[str, Any]):
 
     require_exploit_flag = reporting.get(
         "require_exploit_for_remote_no_auth",
-        True,
+        True
     )
 
     now = int(time.time())
     last_seen_cut = now - days_last_seen * 86400
-    # published_cut = now - published_older * 86400  # currently not used
+    published_cut = now - published_older * 86400
 
-    # site tag → label
     site_cfg = {s["key"]: s["label"] for s in cfg["sites"]}
     ungrouped = cfg.get("ungrouped_label", "Ungrouped")
     site_labels = set(site_cfg.values()) | {ungrouped}
 
     overall = {
         lab: {
-            "crit": 0,
-            "high": 0,
-            "medium": 0,
-            "low": 0,
-            "remote_crit": 0,
-            "remote_high": 0,
-            "assets": set(),
+            "crit": 0, "high": 0, "medium": 0, "low": 0,
+            "remote_crit": 0, "remote_high": 0,
+            "assets": set()
         }
         for lab in site_labels
     }
@@ -678,13 +683,24 @@ def collect(sess: requests.Session, cfg: Dict[str, Any]):
     status = poll_export(sess, uuid)
     chunks = status.get("chunks_available") or []
 
+    # NEW: initialise debug counter
+    remote_counter = 0
+
     for f in iter_chunks(sess, uuid, chunks):
         total_seen += 1
 
-        sev = classify_sev(f)
+        # First choice: CVSS-based band
+        sev = severity_band(f)
+
+        # Optional fallback: if CVSS missing, try Tenable severity
+        if not sev:
+            sev = classify_sev(f)
+
         if not sev:
             continue
+
         total_with_sev += 1
+
 
         asset = f.get("asset", {}) or {}
         sid = asset.get("uuid") or asset.get("id")
@@ -698,11 +714,12 @@ def collect(sess: requests.Session, cfg: Dict[str, Any]):
         if sid:
             overall[lab]["assets"].add(sid)
 
+        # Remote classifier (using your config flag)
         remote = is_remote_no_auth(f, require_exploit=require_exploit_flag)
         if remote:
             remote_counter += 1
 
-
+        # Site-level severity counts (CVSS-based band)
         if sev == "critical":
             overall[lab]["crit"] += 1
             if remote:
@@ -715,6 +732,27 @@ def collect(sess: requests.Session, cfg: Dict[str, Any]):
             overall[lab]["medium"] += 1
         elif sev == "low":
             overall[lab]["low"] += 1
+
+        # SLA risk uses the SAME band (just capitalised)
+        risk = sev.capitalize()  # 'critical' -> 'Critical', etc.
+
+        age = vuln_age_days(f)
+        breach = age > sla_days(risk)
+
+        bucket = sla[lab].setdefault(
+            risk,
+            {"total": 0, "breaches": 0, "remote_total": 0, "remote_breaches": 0}
+        )
+
+        bucket["total"] += 1
+        if breach:
+            bucket["breaches"] += 1
+
+        if remote:
+            bucket["remote_total"] += 1
+            if breach:
+                bucket["remote_breaches"] += 1
+
 
         # SLA aggregation
         typ = asset_type(asset, tag_cfg)
