@@ -344,23 +344,54 @@ def parse_cvss(vector) -> Dict[str, str]:
             out[k] = v
     return out
 
+def extract_cvss_vector(plugin: Dict[str, Any]) -> Any:
+    """
+    Try to pull a CVSS vector string (or dict with 'vector') out of the plugin
+    in a few different shapes Tenable might use.
+    Returns either a string, a dict containing 'vector', or None.
+    """
 
-def is_remote_no_auth(finding: Dict[str, Any], require_exploit: bool = True) -> bool:
-    """
-    Remote / no-auth:
-      - AV: N or A
-      - PR: N or Au: N (legacy)
-      - If require_exploit=True, only count if exploit_available / good ease.
-    """
-    plugin = finding.get("plugin", {})
-    vector = plugin.get("cvss3_vector") or plugin.get("cvss_vector")
+    if not isinstance(plugin, dict):
+        return None
+
+    # Common direct keys
+    for key in ("cvss3_vector", "cvss_vector", "cvssV3_vector", "cvss_v3_vector"):
+        v = plugin.get(key)
+        if v:
+            return v
+
+    # Nested blocks like: plugin["cvss3"] = {"vector": "CVSS:3.1/AV:N/..."}
+    for key in ("cvss3", "cvssV3", "cvss_v3", "cvss", "cvssV2", "cvss2"):
+        block = plugin.get(key)
+        if isinstance(block, dict):
+            v = (
+                block.get("vector")
+                or block.get("base_vector")
+                or block.get("v3_vector")
+                or block.get("v2_vector")
+            )
+            if v:
+                # Could be either a string or dict; parse_cvss handles both
+                return v
+
+    return None
+
+
+def is_remote_no_auth(finding: Dict[str, Any], require_exploit=True) -> bool:
+    plugin = finding.get("plugin", {}) or {}
+
+    # Try to get *some* usable CVSS vector from all the likely places.
+    vector = extract_cvss_vector(plugin)
     m = parse_cvss(vector)
 
     av = m.get("AV")
     pr = m.get("PR")
     au = m.get("Au")
 
+    # Remote if AV is Network or Adjacent
     remote = av in ("N", "A")
+
+    # "No auth" if no privileges required (CVSSv3 PR=N) or CVSSv2 Au=N
     noauth = (pr == "N") or (au == "N")
 
     if not (remote and noauth):
@@ -369,6 +400,7 @@ def is_remote_no_auth(finding: Dict[str, Any], require_exploit: bool = True) -> 
     if not require_exploit:
         return True
 
+    # Only enforced if you explicitly want exploit evidence
     exploited = plugin.get("exploit_available")
     ease = (plugin.get("exploitability_ease") or "").lower()
 
@@ -594,6 +626,10 @@ def site_label(asset: Dict[str, Any], site_cfg, tag_cfg, ungrouped: str) -> str:
 def collect(sess: requests.Session, cfg: Dict[str, Any]):
     total_seen = 0
     total_with_sev = 0
+    def collect(sess, cfg):
+        total_seen = 0
+        total_with_sev = 0
+        remote_counter = 0  # NEW
 
     asset_tags = fetch_all_assets(sess)
 
@@ -663,6 +699,9 @@ def collect(sess: requests.Session, cfg: Dict[str, Any]):
             overall[lab]["assets"].add(sid)
 
         remote = is_remote_no_auth(f, require_exploit=require_exploit_flag)
+        if remote:
+            remote_counter += 1
+
 
         if sev == "critical":
             overall[lab]["crit"] += 1
@@ -707,6 +746,12 @@ def collect(sess: requests.Session, cfg: Dict[str, Any]):
         f"[debug] Findings processed: {total_seen}, "
         f"with recognised severity: {total_with_sev}"
     )
+    
+    print(f"[debug] Findings processed: {total_seen}, "
+          f"with recognised severity: {total_with_sev}, "
+          f"remote_no_auth_matches: {remote_counter}")
+    return overall, sla, site_cfg, ungrouped
+
 
     return overall, sla, site_cfg, ungrouped
 
