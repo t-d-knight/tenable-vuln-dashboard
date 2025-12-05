@@ -465,41 +465,39 @@ def collect(sess, cfg):
 
     reporting = cfg["reporting"]
     tag_cfg = cfg["tags"]
-    require_exploit = reporting.get("require_exploit_for_remote_no_auth", True)
 
     days_last_seen = reporting["days_last_seen"]
     published_older = reporting["vuln_published_older_than_days"]
+
+    # NEW: pull the flag from config (default True if missing)
+    require_exploit_flag = reporting.get(
+        "require_exploit_for_remote_no_auth",
+        True
+    )
 
     now = int(time.time())
     last_seen_cut = now - days_last_seen * 86400
     published_cut = now - published_older * 86400
 
-    # site tag → label
     site_cfg = {s["key"]: s["label"] for s in cfg["sites"]}
     ungrouped = cfg.get("ungrouped_label", "Ungrouped")
     site_labels = set(site_cfg.values()) | {ungrouped}
 
-    # accumulators
     overall = {
-        lab: {"crit": 0, "high": 0, "medium": 0, "low": 0,
-              "remote_crit": 0, "remote_high": 0,
-              "assets": set()}
+        lab: {
+            "crit": 0, "high": 0, "medium": 0, "low": 0,
+            "remote_crit": 0, "remote_high": 0,
+            "assets": set()
+        }
         for lab in site_labels
     }
 
     sla = {lab: {} for lab in site_labels}
 
-    # -------- Tenable.io Export Filters (working) --------
     filters = {
-                # State = Active / Resurfaced / New  (API: OPEN / REOPENED)
         "state": ["OPEN", "REOPENED"],
-
-        # Severity = High, Critical
-        "severity": ["low", "medium","high", "critical"],
-
-        # Last Seen within last X days
-        # Tenable.io export uses last_found as the filter key
-        "last_found": last_seen_cut
+        "severity": ["low", "medium", "high", "critical"],
+        "last_found": last_seen_cut,
     }
 
     uuid = start_export(sess, filters)
@@ -509,15 +507,10 @@ def collect(sess, cfg):
     for f in iter_chunks(sess, uuid, chunks):
         total_seen += 1
 
-        if total_seen == 1:
-            asset = f.get("asset", {}) or {}
-            sid = asset.get("uuid") or asset.get("id")
-            print("[debug] asset uuid:", sid)
-            print("[debug] attached tags:", asset_tags.get(sid))
-
         sev = classify_sev(f)
         if not sev:
             continue
+        total_with_sev += 1  # optional, just for your debug
 
         asset = f.get("asset", {}) or {}
         sid = asset.get("uuid") or asset.get("id")
@@ -527,14 +520,13 @@ def collect(sess, cfg):
 
         lab = site_label(asset, site_cfg, tag_cfg, ungrouped)
 
-        # track unique endpoints per site
+        # NEW: track unique assets per site
         if sid:
             overall[lab]["assets"].add(sid)
 
-        # Compute once so we don't re-parse CVSS over and over
-        remote = is_remote_no_auth(f, require_exploit=require_exploit)
+        # NEW: respect config flag here
+        remote = is_remote_no_auth(f, require_exploit=require_exploit_flag)
 
-        # Map severity label to our counter keys
         if sev == "critical":
             overall[lab]["crit"] += 1
             if remote:
@@ -548,7 +540,7 @@ def collect(sess, cfg):
         elif sev == "low":
             overall[lab]["low"] += 1
 
-        # SLA aggregation
+        # SLA bit unchanged…
         typ = asset_type(asset, tag_cfg)
         cvss = get_cvss_score(f)
         risk = risk_map(typ, cvss)
@@ -556,7 +548,8 @@ def collect(sess, cfg):
         breach = age > sla_days(risk)
 
         bucket = sla[lab].setdefault(
-            risk, {"total": 0, "breaches": 0, "remote_total": 0, "remote_breaches": 0}
+            risk,
+            {"total": 0, "breaches": 0, "remote_total": 0, "remote_breaches": 0}
         )
 
         bucket["total"] += 1
@@ -569,7 +562,6 @@ def collect(sess, cfg):
                 bucket["remote_breaches"] += 1
 
     print(f"[debug] Findings processed: {total_seen}, with recognised severity: {total_with_sev}")
-    
     return overall, sla, site_cfg, ungrouped
 
 
