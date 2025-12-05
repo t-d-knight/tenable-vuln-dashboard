@@ -2,19 +2,18 @@
 import argparse
 import datetime as dt
 import json
+import requests
+import yaml
+import sqlite3
+import time
 import os
-
 try:
     import psycopg2
 except ImportError:
     psycopg2 = None
-
-import sqlite3
-import time
 from typing import Dict, Any, Iterable
 
-import requests
-import yaml
+
 
 
 # ------------------------------------------------------------
@@ -44,6 +43,15 @@ def load_config(path: str = "config.yaml") -> Dict[str, Any]:
 
     return cfg
 
+def pg_connect(cfg: Dict[str, Any]):
+    db = cfg.get("database", {})
+    return psycopg2.connect(
+        host=db.get("host", "127.0.0.1"),
+        port=db.get("port", 5432),
+        dbname=db.get("name", "tenable_trends"),
+        user=db.get("user", "tenable_trends_user"),
+        password=db.get("password"),
+    )
 
 def db_engine(cfg: Dict[str, Any]) -> str:
     return (cfg.get("database", {}).get("engine") or "sqlite").lower()
@@ -69,145 +77,123 @@ def db_connect(cfg: Dict[str, Any]):
     db_path = cfg["reporting"]["db_path"]
     return sqlite3.connect(db_path)
 
+# ------------------------------------------------------------
+#   DB INIT / PRUNE / WRITES (Postgres)
+# ------------------------------------------------------------
 
 def init_db(cfg: Dict[str, Any]):
-    conn = db_connect(cfg)
-    c = conn.cursor()
+    """Ensure Postgres tables exist."""
+    conn = pg_connect(cfg)
+    cur = conn.cursor()
 
-    engine = db_engine(cfg)
+    # Matches your existing migrated schema
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS daily_site_metrics (
+        snapshot_date TEXT NOT NULL,
+        site_label    TEXT NOT NULL,
+        site_tag      TEXT NOT NULL,
+        crit          INTEGER NOT NULL,
+        high          INTEGER NOT NULL,
+        medium        INTEGER NOT NULL,
+        low           INTEGER NOT NULL,
+        total         INTEGER NOT NULL,
+        remote_crit   INTEGER NOT NULL,
+        remote_high   INTEGER NOT NULL,
+        assets        INTEGER NOT NULL,
+        PRIMARY KEY (snapshot_date, site_label)
+    );
+    """)
 
-    if engine == "postgres":
-        # postgres: no IF NOT EXISTS on PK, but table IF NOT EXISTS is fine
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS daily_site_metrics (
-            snapshot_date TEXT NOT NULL,
-            site_label    TEXT NOT NULL,
-            site_tag      TEXT NOT NULL,
-            crit          INTEGER NOT NULL,
-            high          INTEGER NOT NULL,
-            medium        INTEGER NOT NULL,
-            low           INTEGER NOT NULL,
-            total         INTEGER NOT NULL,
-            remote_crit   INTEGER NOT NULL,
-            remote_high   INTEGER NOT NULL,
-            assets        INTEGER NOT NULL,
-            PRIMARY KEY (snapshot_date, site_label)
-        );
-        """)
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS daily_sla_metrics (
-            snapshot_date         TEXT NOT NULL,
-            site_label            TEXT NOT NULL,
-            site_tag              TEXT NOT NULL,
-            risk                  TEXT NOT NULL,
-            total_vulns           INTEGER NOT NULL,
-            sla_breaches          INTEGER NOT NULL,
-            remote_no_auth_vulns  INTEGER NOT NULL,
-            remote_no_auth_breaches INTEGER NOT NULL,
-            PRIMARY KEY (snapshot_date, site_label, risk)
-        );
-        """)
-    else:
-        # sqlite schema identical
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS daily_site_metrics (
-            snapshot_date TEXT NOT NULL,
-            site_label TEXT NOT NULL,
-            site_tag TEXT NOT NULL,
-            crit INTEGER NOT NULL,
-            high INTEGER NOT NULL,
-            medium INTEGER NOT NULL,
-            low INTEGER NOT NULL,
-            total INTEGER NOT NULL,
-            remote_crit INTEGER NOT NULL,
-            remote_high INTEGER NOT NULL,
-            assets INTEGER NOT NULL,
-            PRIMARY KEY (snapshot_date, site_label)
-        );
-        """)
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS daily_sla_metrics (
-            snapshot_date TEXT NOT NULL,
-            site_label TEXT NOT NULL,
-            site_tag TEXT NOT NULL,
-            risk TEXT NOT NULL,
-            total_vulns INTEGER NOT NULL,
-            sla_breaches INTEGER NOT NULL,
-            remote_no_auth_vulns INTEGER NOT NULL,
-            remote_no_auth_breaches INTEGER NOT NULL,
-            PRIMARY KEY (snapshot_date, site_label, risk)
-        );
-        """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS daily_sla_metrics (
+        snapshot_date           TEXT NOT NULL,
+        site_label              TEXT NOT NULL,
+        site_tag                TEXT NOT NULL,
+        risk                    TEXT NOT NULL,
+        total_vulns             INTEGER NOT NULL,
+        sla_breaches            INTEGER NOT NULL,
+        remote_no_auth_vulns    INTEGER NOT NULL,
+        remote_no_auth_breaches INTEGER NOT NULL,
+        PRIMARY KEY (snapshot_date, site_label, risk)
+    );
+    """)
 
     conn.commit()
     conn.close()
 
 
 def prune_old(cfg: Dict[str, Any], retention_days: int):
+    """Delete snapshots older than retention_days from Postgres."""
     if retention_days <= 0:
         return
 
     cutoff = (dt.date.today() - dt.timedelta(days=retention_days)).isoformat()
-    conn = db_connect(cfg)
-    c = conn.cursor()
 
-    if db_engine(cfg) == "postgres":
-        c.execute("DELETE FROM daily_site_metrics WHERE snapshot_date < %s", (cutoff,))
-        c.execute("DELETE FROM daily_sla_metrics WHERE snapshot_date < %s", (cutoff,))
-    else:
-        c.execute("DELETE FROM daily_site_metrics WHERE snapshot_date < ?", (cutoff,))
-        c.execute("DELETE FROM daily_sla_metrics WHERE snapshot_date < ?", (cutoff,))
+    conn = pg_connect(cfg)
+    cur = conn.cursor()
+
+    cur.execute("DELETE FROM daily_site_metrics WHERE snapshot_date < %s", (cutoff,))
+    cur.execute("DELETE FROM daily_sla_metrics WHERE snapshot_date < %s", (cutoff,))
 
     conn.commit()
     conn.close()
 
 
-def write_site(cfg: Dict[str, Any], date, data, tag_lookup, ungrouped):
-    conn = db_connect(cfg)
-    c = conn.cursor()
-    engine = db_engine(cfg)
+def write_site(cfg: Dict[str, Any], date: str, data, tag_lookup, ungrouped: str):
+    """
+    Write per-site severity counts into Postgres.
+
+    Uses ON CONFLICT so re-running the collector for the same date overwrites
+    that day’s row instead of duplicating it.
+    """
+    conn = pg_connect(cfg)
+    cur = conn.cursor()
 
     for lab, d in data.items():
-        crit = d["crit"]; high = d["high"]; med = d["medium"]; low = d["low"]
+        crit = d["crit"]
+        high = d["high"]
+        med  = d["medium"]
+        low  = d["low"]
         total = crit + high + med + low
+
         tag = tag_lookup.get(lab, "UNGROUPED" if lab == ungrouped else lab)
 
-        params = (date, lab, tag, crit, high, med, low, total,
-                  d["remote_crit"], d["remote_high"], len(d["assets"]))
+        params = (
+            date, lab, tag,
+            crit, high, med, low, total,
+            d["remote_crit"], d["remote_high"],
+            len(d["assets"]),
+        )
 
-        if engine == "postgres":
-            c.execute("""
-            INSERT INTO daily_site_metrics
-              (snapshot_date, site_label, site_tag,
-               crit, high, medium, low, total,
-               remote_crit, remote_high, assets)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT (snapshot_date, site_label)
-            DO UPDATE SET
-              site_tag     = EXCLUDED.site_tag,
-              crit         = EXCLUDED.crit,
-              high         = EXCLUDED.high,
-              medium       = EXCLUDED.medium,
-              low          = EXCLUDED.low,
-              total        = EXCLUDED.total,
-              remote_crit  = EXCLUDED.remote_crit,
-              remote_high  = EXCLUDED.remote_high,
-              assets       = EXCLUDED.assets;
-            """, params)
-        else:
-            c.execute("""
-            INSERT OR REPLACE INTO daily_site_metrics
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, params)
+        cur.execute("""
+        INSERT INTO daily_site_metrics
+          (snapshot_date, site_label, site_tag,
+           crit, high, medium, low, total,
+           remote_crit, remote_high, assets)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (snapshot_date, site_label)
+        DO UPDATE SET
+          site_tag     = EXCLUDED.site_tag,
+          crit         = EXCLUDED.crit,
+          high         = EXCLUDED.high,
+          medium       = EXCLUDED.medium,
+          low          = EXCLUDED.low,
+          total        = EXCLUDED.total,
+          remote_crit  = EXCLUDED.remote_crit,
+          remote_high  = EXCLUDED.remote_high,
+          assets       = EXCLUDED.assets;
+        """, params)
 
     conn.commit()
     conn.close()
 
 
-def write_sla(cfg: Dict[str, Any], date, sla_data, tag_lookup, ungrouped):
-    conn = db_connect(cfg)
-    c = conn.cursor()
-    engine = db_engine(cfg)
+def write_sla(cfg: Dict[str, Any], date: str, sla_data, tag_lookup, ungrouped: str):
+    """
+    Write per-site SLA metrics into Postgres.
+    """
+    conn = pg_connect(cfg)
+    cur = conn.cursor()
 
     for lab, risks in sla_data.items():
         tag = tag_lookup.get(lab, "UNGROUPED" if lab == ungrouped else lab)
@@ -219,26 +205,20 @@ def write_sla(cfg: Dict[str, Any], date, sla_data, tag_lookup, ungrouped):
                 d["remote_total"], d["remote_breaches"],
             )
 
-            if engine == "postgres":
-                c.execute("""
-                INSERT INTO daily_sla_metrics
-                  (snapshot_date, site_label, site_tag, risk,
-                   total_vulns, sla_breaches,
-                   remote_no_auth_vulns, remote_no_auth_breaches)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-                ON CONFLICT (snapshot_date, site_label, risk)
-                DO UPDATE SET
-                  site_tag              = EXCLUDED.site_tag,
-                  total_vulns           = EXCLUDED.total_vulns,
-                  sla_breaches          = EXCLUDED.sla_breaches,
-                  remote_no_auth_vulns  = EXCLUDED.remote_no_auth_vulns,
-                  remote_no_auth_breaches = EXCLUDED.remote_no_auth_breaches;
-                """, params)
-            else:
-                c.execute("""
-                INSERT OR REPLACE INTO daily_sla_metrics
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, params)
+            cur.execute("""
+            INSERT INTO daily_sla_metrics
+              (snapshot_date, site_label, site_tag, risk,
+               total_vulns, sla_breaches,
+               remote_no_auth_vulns, remote_no_auth_breaches)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (snapshot_date, site_label, risk)
+            DO UPDATE SET
+              site_tag               = EXCLUDED.site_tag,
+              total_vulns            = EXCLUDED.total_vulns,
+              sla_breaches           = EXCLUDED.sla_breaches,
+              remote_no_auth_vulns   = EXCLUDED.remote_no_auth_vulns,
+              remote_no_auth_breaches= EXCLUDED.remote_no_auth_breaches;
+            """, params)
 
     conn.commit()
     conn.close()
@@ -773,8 +753,8 @@ def main():
         print(f"[site] {lab:12s} crit={d['crit']:5d} high={d['high']:5d} "
               f"med={d['medium']:5d} low={d['low']:5d} total={d['crit']+d['high']+d['medium']+d['low']}")
         
-    write_site(cfg, date, overall, label_to_tag, ungrouped)
-    write_sla(cfg, date, sla_data, label_to_tag, ungrouped)
+write_site(cfg, date, overall, label_to_tag, ungrouped)
+write_sla(cfg, date, sla_data, label_to_tag, ungrouped)
 
     print("[+] Done.")
 
