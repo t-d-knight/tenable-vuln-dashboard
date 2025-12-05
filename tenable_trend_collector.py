@@ -13,9 +13,6 @@ except ImportError:
     psycopg2 = None
 from typing import Dict, Any, Iterable
 
-
-
-
 # ------------------------------------------------------------
 #   CONFIG + DB
 # ------------------------------------------------------------
@@ -186,7 +183,6 @@ def write_site(cfg: Dict[str, Any], date: str, data, tag_lookup, ungrouped: str)
 
     conn.commit()
     conn.close()
-
 
 def write_sla(cfg: Dict[str, Any], date: str, sla_data, tag_lookup, ungrouped: str):
     """
