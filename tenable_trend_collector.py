@@ -757,7 +757,7 @@ def collect(sess, cfg):
         # SLA aggregation
         typ = asset_type(asset, tag_cfg)
         cvss = get_cvss_score(f)
-        risk = risk_map(typ, cvss)
+        risk = sev.capitalize()  # 'critical' -> 'Critical'
         age = vuln_age_days(f)
         breach = age > sla_days(risk)
 
