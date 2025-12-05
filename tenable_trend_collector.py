@@ -465,6 +465,7 @@ def collect(sess, cfg):
 
     reporting = cfg["reporting"]
     tag_cfg = cfg["tags"]
+    require_exploit = reporting.get("require_exploit_for_remote_no_auth", True)
 
     days_last_seen = reporting["days_last_seen"]
     published_older = reporting["vuln_published_older_than_days"]
@@ -526,8 +527,12 @@ def collect(sess, cfg):
 
         lab = site_label(asset, site_cfg, tag_cfg, ungrouped)
 
+        # track unique endpoints per site
+        if sid:
+            overall[lab]["assets"].add(sid)
+
         # Compute once so we don't re-parse CVSS over and over
-        remote = is_remote_no_auth(f)
+        remote = is_remote_no_auth(f, require_exploit=require_exploit)
 
         # Map severity label to our counter keys
         if sev == "critical":

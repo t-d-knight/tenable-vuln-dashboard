@@ -1,17 +1,62 @@
 #!/usr/bin/env python3
 import sqlite3
 from pathlib import Path
+from typing import Dict, Any
 
 import psycopg2
 from psycopg2.extras import execute_values
 import yaml
+import os
 
 
-def load_config():
-    cfg_path = Path(__file__).with_name("config.yaml")
+# ------------------------------------------------------------
+#  Config loader (supports secrets_file like main script)
+# ------------------------------------------------------------
+
+def load_config(path: str = None) -> Dict[str, Any]:
+    """
+    Load main config.yaml, then (optionally) merge in secrets from a separate
+    secrets file, so callers can still do:
+      cfg["tenable"]["access_key"]
+      cfg["tenable"]["secret_key"]
+      cfg["database"]["user"]
+      cfg["database"]["password"]
+    """
+    if path is None:
+        cfg_path = Path(__file__).with_name("config.yaml")
+    else:
+        cfg_path = Path(path)
+
     with cfg_path.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f) or {}
 
+    secrets_rel = cfg.get("secrets_file")
+    if secrets_rel:
+        base_dir = cfg_path.parent
+        secrets_path = base_dir / secrets_rel
+
+        if not secrets_path.is_file():
+            raise FileNotFoundError(f"Secrets file not found: {secrets_path}")
+
+        with secrets_path.open("r", encoding="utf-8") as sf:
+            secrets = yaml.safe_load(sf) or {}
+
+        # Merge Tenable creds (if present)
+        if "tenable" in secrets:
+            cfg.setdefault("tenable", {})
+            cfg["tenable"].update(secrets["tenable"])
+
+        # Merge DB creds (if present)
+        if "database" in secrets:
+            cfg.setdefault("database", {})
+            cfg["database"].update(secrets["database"])
+
+    return cfg
+
+
+# ------------------------------------------------------------
+#  DB helpers
+# ------------------------------------------------------------
 
 def get_sqlite_conn(cfg):
     db_path = cfg["reporting"]["db_path"]
@@ -82,6 +127,10 @@ def get_sqlite_columns(conn, table_name):
     return cols
 
 
+# ------------------------------------------------------------
+#  Migration logic
+# ------------------------------------------------------------
+
 def migrate_daily_site_metrics(sqlite_conn, pg_conn):
     table_name = "daily_site_metrics"
     cols = get_sqlite_columns(sqlite_conn, table_name)
@@ -94,7 +143,6 @@ def migrate_daily_site_metrics(sqlite_conn, pg_conn):
         print(f"[!] No rows found in {table_name}, skipping.")
         return
 
-    # Build canonical rows for Postgres
     canonical_rows = []
     for row in rows:
         row_map = dict(zip(cols, row))
@@ -107,10 +155,21 @@ def migrate_daily_site_metrics(sqlite_conn, pg_conn):
         medium = row_map.get("medium", 0)
         low = row_map.get("low", 0)
 
-        remote_crit = row_map.get("remote_crit", 0)
-        remote_high = row_map.get("remote_high", 0)
+        # Handle both new and legacy column names
+        remote_crit = row_map.get(
+            "remote_crit",
+            row_map.get("remote_no_auth_crit", 0)
+        )
+        remote_high = row_map.get(
+            "remote_high",
+            row_map.get("remote_no_auth_high", 0)
+        )
 
-        assets = row_map.get("assets", 0)
+        assets = row_map.get(
+            "assets",
+            row_map.get("endpoints", 0)
+        )
+
         total = row_map.get("total", 0)
 
         canonical_rows.append(
@@ -137,6 +196,15 @@ def migrate_daily_site_metrics(sqlite_conn, pg_conn):
           remote_crit, remote_high,
           assets, total
         ) VALUES %s
+        ON CONFLICT (snapshot_date, site_label) DO UPDATE SET
+          crit = EXCLUDED.crit,
+          high = EXCLUDED.high,
+          medium = EXCLUDED.medium,
+          low = EXCLUDED.low,
+          remote_crit = EXCLUDED.remote_crit,
+          remote_high = EXCLUDED.remote_high,
+          assets = EXCLUDED.assets,
+          total = EXCLUDED.total;
     """
 
     with pg_conn.cursor() as pg_cur:
@@ -166,10 +234,14 @@ def migrate_daily_sla_metrics(sqlite_conn, pg_conn):
         site_label = row_map.get("site_label")
         risk = row_map.get("risk")
 
-        total = row_map.get("total", 0)
-        breaches = row_map.get("breaches", 0)
-        remote_total = row_map.get("remote_total", 0)
-        remote_breaches = row_map.get("remote_breaches", 0)
+        # Support both old and new column names
+        total = row_map.get("total", row_map.get("total_vulns", 0))
+        breaches = row_map.get("breaches", row_map.get("sla_breaches", 0))
+        remote_total = row_map.get("remote_total", row_map.get("remote_no_auth_vulns", 0))
+        remote_breaches = row_map.get(
+            "remote_breaches",
+            row_map.get("remote_no_auth_breaches", 0)
+        )
 
         canonical_rows.append(
             (
@@ -191,6 +263,11 @@ def migrate_daily_sla_metrics(sqlite_conn, pg_conn):
           total, breaches,
           remote_total, remote_breaches
         ) VALUES %s
+        ON CONFLICT (snapshot_date, site_label, risk) DO UPDATE SET
+          total = EXCLUDED.total,
+          breaches = EXCLUDED.breaches,
+          remote_total = EXCLUDED.remote_total,
+          remote_breaches = EXCLUDED.remote_breaches;
     """
 
     with pg_conn.cursor() as pg_cur:
