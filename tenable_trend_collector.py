@@ -225,6 +225,8 @@ def write_sla(cfg: Dict[str, Any], date: str, sla_data, tag_lookup, ungrouped: s
 
     conn.commit()
     conn.close()
+
+
 # ------------------------------------------------------------
 #   TENABLE API HELPERS
 # ------------------------------------------------------------
@@ -260,7 +262,7 @@ def start_export(sess: requests.Session, filters: Dict[str, Any]) -> str:
 
 
 def poll_export(sess: requests.Session, uuid: str, interval: int = 10) -> Dict[str, Any]:
-    url = f"{sess.base_url}/vulns/export/{uuid}/status"
+    url = f"{sess.base_url}/vulns/export/{uuid}/status}"
     start = time.time()
 
     while True:
@@ -302,33 +304,81 @@ def iter_chunks(sess: requests.Session, uuid: str, chunks) -> Iterable[Dict[str,
 
 
 # ------------------------------------------------------------
-#   CVSS + CLASSIFICATION HELPERS
+#   CVSS + CLASSIFICATION HELPERS (v2/v3/v4 aware)
 # ------------------------------------------------------------
 
-def parse_cvss(vector) -> Dict[str, str]:
+def _get_cvss_vector_string(plugin: Dict[str, Any]) -> str | None:
     """
-    Normalise Tenable CVSS vector into a dict of metrics.
+    Try to find *any* CVSS vector string in the plugin metadata.
+    Prefer v4, then v3, then v2.
+    """
+    if not plugin:
+        return None
 
-    Handles:
-      - string: "CVSS:3.1/AV:N/AC:L/PR:N/..."
-      - dict:   {"vector": "CVSS:3.1/AV:N/AC:L/PR:N/...", ...}
+    candidate_keys = [
+        # CVSS v4
+        "cvss4_vector", "cvss4_temporal_vector",
+        # CVSS v3
+        "cvss3_vector", "cvss3_temporal_vector",
+        "cvssv3_vector", "cvssv3_temporal_vector",
+        # Generic / legacy
+        "cvss_vector", "cvss_temporal_vector",
+        # CVSS v2
+        "cvss2_vector", "cvss2_temporal_vector",
+        "cvssv2_vector", "cvssv2_temporal_vector",
+    ]
+
+    for key in candidate_keys:
+        val = plugin.get(key)
+        if not val:
+            continue
+
+        if isinstance(val, dict):
+            vec = (
+                val.get("vector")
+                or val.get("base_vector")
+                or val.get("v4_vector")
+                or val.get("v3_vector")
+                or val.get("v2_vector")
+            )
+            if vec:
+                return str(vec)
+        else:
+            return str(val)
+
+    cvss = plugin.get("cvss") or {}
+    if isinstance(cvss, dict):
+        vec = (
+            cvss.get("vector")
+            or cvss.get("base_vector")
+            or cvss.get("v4_vector")
+            or cvss.get("v3_vector")
+            or cvss.get("v2_vector")
+        )
+        if vec:
+            return str(vec)
+
+    return None
+
+
+def parse_cvss(vector: Any) -> Dict[str, str]:
+    """
+    Normalise a CVSS v2 / v3 / v4 vector string into a dict of metrics.
     """
     if not vector:
         return {}
 
-    # If Tenable gives us a dict, try to pull the actual vector string out
     if isinstance(vector, dict):
-        vector_str = (
+        vector = (
             vector.get("vector")
             or vector.get("base_vector")
+            or vector.get("v4_vector")
             or vector.get("v3_vector")
             or vector.get("v2_vector")
         )
-        if not vector_str:
+        if not vector:
             return {}
-        vector = vector_str
 
-    # If it's still not a string, give up gracefully
     if not isinstance(vector, str):
         return {}
 
@@ -339,84 +389,34 @@ def parse_cvss(vector) -> Dict[str, str]:
 
     out: Dict[str, str] = {}
     for p in parts:
-        if ":" in p:
-            k, v = p.split(":", 1)
-            out[k] = v
+        if ":" not in p:
+            continue
+        k, v = p.split(":", 1)
+        out[k] = v
     return out
 
-def extract_cvss_vector(plugin: Dict[str, Any]) -> Any:
+
+def is_remote_no_auth(finding: Dict[str, Any], require_exploit: bool = True) -> bool:
     """
-    Try to pull a CVSS vector string (or dict with 'vector') out of the plugin
-    in a few different shapes Tenable might use.
-    Returns either a string, a dict containing 'vector', or None.
+    Decide if a vulnerability is 'remote, no-auth' based on CVSS.
+    Works for CVSS v2, v3 and v4 vectors.
     """
-
-    if not isinstance(plugin, dict):
-        return None
-
-    # Common direct keys
-    for key in ("cvss3_vector", "cvss_vector", "cvssV3_vector", "cvss_v3_vector"):
-        v = plugin.get(key)
-        if v:
-            return v
-
-    # Nested blocks like: plugin["cvss3"] = {"vector": "CVSS:3.1/AV:N/..."}
-    for key in ("cvss3", "cvssV3", "cvss_v3", "cvss", "cvssV2", "cvss2"):
-        block = plugin.get(key)
-        if isinstance(block, dict):
-            v = (
-                block.get("vector")
-                or block.get("base_vector")
-                or block.get("v3_vector")
-                or block.get("v2_vector")
-            )
-            if v:
-                # Could be either a string or dict; parse_cvss handles both
-                return v
-
-    return None
-
-def severity_band(finding) -> str | None:
-    """
-    Derive 'critical'/'high'/'medium'/'low' from CVSS score,
-    so both site metrics and SLA use the same maths.
-    """
-    cvss = get_cvss_score(finding)
-    if cvss is None:
-        return None
-
-    try:
-        score = float(cvss)
-    except (TypeError, ValueError):
-        return None
-
-    if score >= 9.0:
-        return "critical"
-    elif score >= 7.0:
-        return "high"
-    elif score >= 4.0:
-        return "medium"
-    elif score > 0:
-        return "low"
-    else:
-        return None
-
-
-def is_remote_no_auth(finding: Dict[str, Any], require_exploit=True) -> bool:
     plugin = finding.get("plugin", {}) or {}
 
-    # Try to get *some* usable CVSS vector from all the likely places.
-    vector = extract_cvss_vector(plugin)
-    m = parse_cvss(vector)
+    vector_str = _get_cvss_vector_string(plugin)
+    m = parse_cvss(vector_str)
+
+    if not m:
+        return False
 
     av = m.get("AV")
     pr = m.get("PR")
-    au = m.get("Au")
+    au = m.get("Au")  # CVSS v2
 
-    # Remote if AV is Network or Adjacent
+    # Remote if network or adjacent
     remote = av in ("N", "A")
 
-    # "No auth" if no privileges required (CVSSv3 PR=N) or CVSSv2 Au=N
+    # "No auth" if PR:N (v3/v4) OR Au:N (v2)
     noauth = (pr == "N") or (au == "N")
 
     if not (remote and noauth):
@@ -425,41 +425,59 @@ def is_remote_no_auth(finding: Dict[str, Any], require_exploit=True) -> bool:
     if not require_exploit:
         return True
 
-    # Only enforced if you explicitly want exploit evidence
     exploited = plugin.get("exploit_available")
     ease = (plugin.get("exploitability_ease") or "").lower()
 
     return bool(exploited) or ("no known" not in ease)
 
 
-def get_cvss_score(finding) -> float:
-    plugin = finding.get("plugin", {})
-    for k in ("cvss3_base_score", "cvss_base_score", "cvss3_score", "cvss_score"):
-        v = plugin.get(k)
-        if v is not None:
-            try:
-                return float(v)
-            except Exception:
-                pass
+def get_cvss_score(finding: Dict[str, Any]) -> float:
+    """
+    Get the 'best' CVSS base score, preferring v4, then v3, then v2.
+    """
+    plugin = finding.get("plugin", {}) or {}
+
+    for key in (
+        "cvss4_base_score", "cvss4_score",
+        "cvss3_base_score", "cvss3_score",
+        "cvss_base_score", "cvss_score",
+        "cvss2_base_score", "cvss2_score",
+    ):
+        v = plugin.get(key)
+        if v is None:
+            continue
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            continue
+
     return 0.0
 
 
-def classify_sev(finding):
+def severity_band(finding: Dict[str, Any]) -> str | None:
     """
-    Normalise Tenable severity to one of: critical, high, medium, low.
+    Map CVSS score to 'critical'/'high'/'medium'/'low'.
+    """
+    score = get_cvss_score(finding)
+    if score <= 0:
+        return None
+    if score >= 9.0:
+        return "critical"
+    if score >= 7.0:
+        return "high"
+    if score >= 4.0:
+        return "medium"
+    return "low"
 
-    Handles:
-      - severity_id: 4/3/2/1
-      - severity:    4/3/2/1
-      - severity:    "critical"/"high"/"medium"/"low"
+
+def classify_sev(finding: Dict[str, Any]) -> str | None:
+    """
+    Fallback: normalise Tenable severity to one of: critical, high, medium, low.
     """
     sev_raw = finding.get("severity")
-
-    # Fall back to severity_id if present
     if sev_raw is None:
         sev_raw = finding.get("severity_id")
 
-    # Try numeric first
     try:
         s = int(sev_raw)
         return {
@@ -467,12 +485,11 @@ def classify_sev(finding):
             3: "high",
             2: "medium",
             1: "low",
-            0: None,  # info, ignore
+            0: None,
         }.get(s)
     except (TypeError, ValueError):
         pass
 
-    # Try string mapping
     if isinstance(sev_raw, str):
         s = sev_raw.strip().lower()
         if s in ("critical", "high", "medium", "low"):
@@ -481,7 +498,7 @@ def classify_sev(finding):
     return None
 
 
-def vuln_age_days(finding) -> float:
+def vuln_age_days(finding: Dict[str, Any]) -> float:
     ts = (
         finding.get("first_found")
         or finding.get("first_seen")
@@ -531,7 +548,6 @@ def fetch_all_assets(sess: requests.Session) -> Dict[str, Any]:
 
     asset_tags: Dict[str, Any] = {}
 
-    # Download each chunk
     for c in chunks:
         print(f"[debug] Fetching asset chunk {c}")
         chunk = sess.get(f"{sess.base_url}/assets/export/{uuid}/chunks/{c}").json()
@@ -566,6 +582,7 @@ def asset_type(asset: Dict[str, Any], tag_cfg: Dict[str, Any]) -> str:
 
     return "unknown"
 
+
 def sla_days(risk: str) -> int:
     return {"Critical": 2, "High": 14, "Medium": 30, "Low": 60}.get(risk, 60)
 
@@ -577,12 +594,6 @@ def sla_days(risk: str) -> int:
 def site_label(asset: Dict[str, Any], site_cfg, tag_cfg, ungrouped: str) -> str:
     """
     Work out the site label for an asset based on tags.
-
-    Supports tag shapes like:
-      {"category": "Sites", "value": "BH-Site"}
-      {"key": "Sites", "value": "BH-Site"}
-      {"tag_key": "Sites", "tag_value": "BH-Site"}
-      "Sites:BH-Site"
     """
     tags = asset.get("tags") or []
     cat = str(tag_cfg.get("site_category", "Sites"))
@@ -604,17 +615,14 @@ def site_label(asset: Dict[str, Any], site_cfg, tag_cfg, ungrouped: str) -> str:
             or ""
         )
 
-        # Case: category == "Sites", value == "BH-Site"
         if category == cat and value in site_cfg:
             return site_cfg[value]
 
-        # Case: category == "Sites:BH-Site"
         if ":" in category:
             c_cat, c_val = category.split(":", 1)
             if c_cat == cat and c_val in site_cfg:
                 return site_cfg[c_val]
 
-        # Case: value == "Sites:BH-Site"
         if ":" in value:
             v_cat, v_val = value.split(":", 1)
             if v_cat == cat and v_val in site_cfg:
@@ -629,7 +637,6 @@ def site_label(asset: Dict[str, Any], site_cfg, tag_cfg, ungrouped: str) -> str:
                 if s_cat == cat and s_val in site_cfg:
                     return site_cfg[s_val]
 
-    # No match → Ungrouped
     return ungrouped
 
 
@@ -640,6 +647,7 @@ def site_label(asset: Dict[str, Any], site_cfg, tag_cfg, ungrouped: str) -> str:
 def collect(sess, cfg):
     total_seen = 0
     total_with_sev = 0
+    remote_counter = 0
 
     asset_tags = fetch_all_assets(sess)
 
@@ -647,8 +655,6 @@ def collect(sess, cfg):
     tag_cfg = cfg["tags"]
 
     days_last_seen = reporting["days_last_seen"]
-    published_older = reporting["vuln_published_older_than_days"]
-
     require_exploit_flag = reporting.get(
         "require_exploit_for_remote_no_auth",
         True
@@ -656,7 +662,6 @@ def collect(sess, cfg):
 
     now = int(time.time())
     last_seen_cut = now - days_last_seen * 86400
-    published_cut = now - published_older * 86400
 
     site_cfg = {s["key"]: s["label"] for s in cfg["sites"]}
     ungrouped = cfg.get("ungrouped_label", "Ungrouped")
@@ -666,7 +671,7 @@ def collect(sess, cfg):
         lab: {
             "crit": 0, "high": 0, "medium": 0, "low": 0,
             "remote_crit": 0, "remote_high": 0,
-            "assets": set()
+            "assets": set(),
         }
         for lab in site_labels
     }
@@ -683,16 +688,18 @@ def collect(sess, cfg):
     status = poll_export(sess, uuid)
     chunks = status.get("chunks_available") or []
 
-    # NEW: initialise debug counter
-    remote_counter = 0
-
     for f in iter_chunks(sess, uuid, chunks):
         total_seen += 1
 
-        # First choice: CVSS-based band
+        # First ~5 plugins for debugging (optional)
+        if total_seen <= 5:
+            print("\n[DEBUG PLUGIN DATA]")
+            print(json.dumps(f.get("plugin", {}), indent=2))
+
+        # CVSS-based severity band
         sev = severity_band(f)
 
-        # Optional fallback: if CVSS missing, try Tenable severity
+        # Fallback to Tenable native severity if CVSS missing
         if not sev:
             sev = classify_sev(f)
 
@@ -700,7 +707,6 @@ def collect(sess, cfg):
             continue
 
         total_with_sev += 1
-
 
         asset = f.get("asset", {}) or {}
         sid = asset.get("uuid") or asset.get("id")
@@ -714,12 +720,19 @@ def collect(sess, cfg):
         if sid:
             overall[lab]["assets"].add(sid)
 
-        # Remote classifier (using your config flag)
+        # Remote classifier
         remote = is_remote_no_auth(f, require_exploit=require_exploit_flag)
         if remote:
             remote_counter += 1
+            if remote_counter <= 5:
+                plugin = f.get("plugin", {}) or {}
+                print("[debug] remote/no-auth example:",
+                      plugin.get("id"),
+                      _get_cvss_vector_string(plugin),
+                      "cvss_score=", get_cvss_score(f),
+                      "sev=", sev)
 
-        # Site-level severity counts (CVSS-based band)
+        # Site-level severity counts
         if sev == "critical":
             overall[lab]["crit"] += 1
             if remote:
@@ -733,42 +746,14 @@ def collect(sess, cfg):
         elif sev == "low":
             overall[lab]["low"] += 1
 
-        # SLA risk uses the SAME band (just capitalised)
-        risk = sev.capitalize()  # 'critical' -> 'Critical', etc.
-
-        age = vuln_age_days(f)
-        breach = age > sla_days(risk)
-
-        bucket = sla[lab].setdefault(
-            risk,
-            {"total": 0, "breaches": 0, "remote_total": 0, "remote_breaches": 0}
-        )
-
-        bucket["total"] += 1
-        if breach:
-            bucket["breaches"] += 1
-
-        if remote:
-            bucket["remote_total"] += 1
-            if breach:
-                bucket["remote_breaches"] += 1
-
-
-        # SLA aggregation
-        typ = asset_type(asset, tag_cfg)
-        cvss = get_cvss_score(f)
+        # SLA aggregation (uses same band, capitalised)
         risk = sev.capitalize()  # 'critical' -> 'Critical'
         age = vuln_age_days(f)
         breach = age > sla_days(risk)
 
         bucket = sla[lab].setdefault(
             risk,
-            {
-                "total": 0,
-                "breaches": 0,
-                "remote_total": 0,
-                "remote_breaches": 0,
-            },
+            {"total": 0, "breaches": 0, "remote_total": 0, "remote_breaches": 0},
         )
 
         bucket["total"] += 1
@@ -782,14 +767,9 @@ def collect(sess, cfg):
 
     print(
         f"[debug] Findings processed: {total_seen}, "
-        f"with recognised severity: {total_with_sev}"
+        f"with recognised severity: {total_with_sev}, "
+        f"remote_no_auth_matches: {remote_counter}"
     )
-    
-    print(f"[debug] Findings processed: {total_seen}, "
-          f"with recognised severity: {total_with_sev}, "
-          f"remote_no_auth_matches: {remote_counter}")
-    return overall, sla, site_cfg, ungrouped
-
 
     return overall, sla, site_cfg, ungrouped
 
