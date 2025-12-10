@@ -311,6 +311,7 @@ def _get_cvss_vector_string(plugin: Dict[str, Any]) -> str | None:
     """
     Try to find *any* CVSS vector string in the plugin metadata.
     Prefer v4, then v3, then v2.
+    Handles both plain strings and dicts with a 'raw' key (Tenable style).
     """
     if not plugin:
         return None
@@ -333,27 +334,31 @@ def _get_cvss_vector_string(plugin: Dict[str, Any]) -> str | None:
         if not val:
             continue
 
+        # Tenable often uses dicts with a "raw" field
         if isinstance(val, dict):
             vec = (
-                val.get("vector")
-                or val.get("base_vector")
-                or val.get("v4_vector")
-                or val.get("v3_vector")
-                or val.get("v2_vector")
+                val.get("raw") or
+                val.get("vector") or
+                val.get("base_vector") or
+                val.get("v4_vector") or
+                val.get("v3_vector") or
+                val.get("v2_vector")
             )
             if vec:
                 return str(vec)
         else:
             return str(val)
 
+    # Fallback: some tenants put everything under a 'cvss' dict
     cvss = plugin.get("cvss") or {}
     if isinstance(cvss, dict):
         vec = (
-            cvss.get("vector")
-            or cvss.get("base_vector")
-            or cvss.get("v4_vector")
-            or cvss.get("v3_vector")
-            or cvss.get("v2_vector")
+            cvss.get("raw") or
+            cvss.get("vector") or
+            cvss.get("base_vector") or
+            cvss.get("v4_vector") or
+            cvss.get("v3_vector") or
+            cvss.get("v2_vector")
         )
         if vec:
             return str(vec)
@@ -688,18 +693,20 @@ def collect(sess, cfg):
     status = poll_export(sess, uuid)
     chunks = status.get("chunks_available") or []
 
-    for f in iter_chunks(sess, uuid, chunks):
-        total_seen += 1
+    remote_counter = 0
 
-        # First ~5 plugins for debugging (optional)
-        if total_seen <= 5:
+    for f in iter_chunks(sess, uuid, chunks):
+        # Dump a few plugins so we can sanity-check CVSS / vectors
+        if total_seen < 20:
             print("\n[DEBUG PLUGIN DATA]")
             print(json.dumps(f.get("plugin", {}), indent=2))
 
-        # CVSS-based severity band
+        total_seen += 1
+
+        # First choice: CVSS-based band
         sev = severity_band(f)
 
-        # Fallback to Tenable native severity if CVSS missing
+        # Fallback: Tenable severity if CVSS missing
         if not sev:
             sev = classify_sev(f)
 
@@ -711,28 +718,28 @@ def collect(sess, cfg):
         asset = f.get("asset", {}) or {}
         sid = asset.get("uuid") or asset.get("id")
 
-        # attach tags from lookup
+        # Attach tags from lookup
         asset["tags"] = asset_tags.get(sid, [])
 
         lab = site_label(asset, site_cfg, tag_cfg, ungrouped)
 
-        # track unique assets per site
+        # Track unique assets per site
         if sid:
             overall[lab]["assets"].add(sid)
 
-        # Remote classifier
+        # Remote classifier (using your config flag)
         remote = is_remote_no_auth(f, require_exploit=require_exploit_flag)
         if remote:
             remote_counter += 1
+            # Optional: show first few remote examples
             if remote_counter <= 5:
-                plugin = f.get("plugin", {}) or {}
+                plugin = f.get("plugin", {})
                 print("[debug] remote/no-auth example:",
                       plugin.get("id"),
                       _get_cvss_vector_string(plugin),
-                      "cvss_score=", get_cvss_score(f),
-                      "sev=", sev)
+                      "severity_band=", sev)
 
-        # Site-level severity counts
+        # Site-level severity counts (CVSS-based band)
         if sev == "critical":
             overall[lab]["crit"] += 1
             if remote:
@@ -746,8 +753,8 @@ def collect(sess, cfg):
         elif sev == "low":
             overall[lab]["low"] += 1
 
-        # SLA aggregation (uses same band, capitalised)
-        risk = sev.capitalize()  # 'critical' -> 'Critical'
+        # SLA aggregation – SAME band as above
+        risk = sev.capitalize()  # 'critical' -> 'Critical', etc.
         age = vuln_age_days(f)
         breach = age > sla_days(risk)
 
@@ -772,7 +779,6 @@ def collect(sess, cfg):
     )
 
     return overall, sla, site_cfg, ungrouped
-
 
 # ------------------------------------------------------------
 #   MAIN
