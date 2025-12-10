@@ -1,0 +1,97 @@
+# Order matters: first matching rule wins
+
+rules:
+  # Browsers
+  - name: "Mozilla Firefox"
+    match: "contains"
+    pattern: "firefox"
+
+  - name: "Google Chrome / Chromium"
+    match: "contains_any"
+    patterns: ["chrome", "chromium"]
+
+  - name: "Microsoft Edge"
+    match: "contains"
+    pattern: "edge"
+
+  # Adobe
+  - name: "Adobe Acrobat / Reader"
+    match: "startswith"
+    pattern: "adobe:acrobat"
+
+  - name: "Adobe Acrobat / Reader"
+    match: "startswith"
+    pattern: "adobe:acrobat_reader"
+
+  - name: "Adobe Creative Cloud Apps"
+    match: "startswith"
+    pattern: "adobe:photoshop"
+
+  - name: "Adobe Creative Cloud Apps"
+    match: "startswith"
+    pattern: "adobe:illustrator"
+
+  - name: "Adobe Creative Cloud Apps"
+    match: "startswith"
+    pattern: "adobe:indesign"
+
+  # Java / runtimes
+  - name: "Java Runtime / Corretto"
+    match: "contains_any"
+    patterns: ["java", "corretto"]
+
+  # Web servers & configs
+  - name: "Web Server Config Weakness"
+    match: "startswith_any"
+    patterns:
+      - "Web Servers -"
+      - "CGI abuses -"
+      - "Web Servers :"
+      - "Web Server -"
+
+  - name: "Apache HTTP Server"
+    match: "startswith"
+    pattern: "apache:http_server"
+
+  - name: "Apache Tomcat"
+    match: "contains"
+    pattern: "apache:tomcat"
+
+  # Microsoft platforms
+  - name: "Microsoft Windows OS"
+    match: "contains_any"
+    patterns: ["windows -", "windows :"]
+
+  - name: "Microsoft Office"
+    match: "contains_any"
+    patterns: ["word", "excel", "outlook", "office"]
+
+  - name: "Microsoft .NET / Azure Data Tools"
+    match: "contains_any"
+    patterns: [".net", "azure data studio"]
+
+  # Endpoint tools
+  - name: "Dell SupportAssist"
+    match: "contains"
+    pattern: "supportassist"
+
+  - name: "VMware Tools"
+    match: "startswith"
+    pattern: "vmware:tools"
+
+  - name: "Nessus Agent"
+    match: "startswith"
+    pattern: "tenable:nessus_agent"
+
+  - name: "VLC Media Player"
+    match: "startswith"
+    pattern: "videolan:vlc_media_player"
+
+  # Fallbacks
+  - name: "7-Zip"
+    match: "startswith"
+    pattern: "7-zip:7-zip"
+
+defaults:
+  vendor_from_prefix: true   # use text before ":" as vendor if present
+  unknown_family_name: "Other / Misc"

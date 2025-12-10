@@ -5,6 +5,7 @@ import json
 import os
 import time
 from typing import Dict, Any, Iterable, Tuple
+import re
 
 import requests
 import yaml
@@ -16,7 +17,7 @@ except ImportError:
 
 
 # ------------------------------------------------------------
-#  CONFIG
+#  CONFIG + PRODUCT RULES
 # ------------------------------------------------------------
 
 def load_config(path: str = "config.yaml") -> Dict[str, Any]:
@@ -48,6 +49,94 @@ def load_config(path: str = "config.yaml") -> Dict[str, Any]:
     return cfg
 
 
+def load_product_rules(path: str = "product_groups.yaml"):
+    """
+    Load product grouping rules used to map raw product keys into
+    vendor + product_family buckets.
+
+    If the file is missing, we fall back to a single "Other / Misc" family.
+    """
+    if not os.path.isfile(path):
+        print(f"[warn] product_groups.yaml not found at {path}, "
+              f"all products will be 'Other / Misc'")
+        return {"rules": [], "defaults": {"unknown_family_name": "Other / Misc"}}
+
+    with open(path, "r") as f:
+        data = yaml.safe_load(f) or {}
+
+    data.setdefault("rules", [])
+    data.setdefault("defaults", {})
+    data["defaults"].setdefault("unknown_family_name", "Other / Misc")
+    data["defaults"].setdefault("vendor_from_prefix", True)
+    return data
+
+
+PRODUCT_RULES = load_product_rules()
+
+
+def _norm(text: str) -> str:
+    return (text or "").lower().strip()
+
+
+def classify_product(product_key: str) -> Dict[str, str]:
+    """
+    Map a raw product_key (e.g. 'adobe:acrobat_reader',
+    'Web Servers - HTTP TRACE / TRACK Methods Allowed') to:
+      - vendor
+      - product_family (bucket)
+
+    Uses rules from product_groups.yaml. First matching rule wins.
+    """
+    pk_norm = _norm(product_key)
+    rules = PRODUCT_RULES.get("rules", [])
+    family = None
+
+    for r in rules:
+        match_type = r.get("match")
+        name = r["name"]
+
+        if match_type == "contains":
+            if r["pattern"].lower() in pk_norm:
+                family = name
+                break
+
+        elif match_type == "startswith":
+            if pk_norm.startswith(r["pattern"].lower()):
+                family = name
+                break
+
+        elif match_type == "contains_any":
+            if any(p.lower() in pk_norm for p in r.get("patterns", [])):
+                family = name
+                break
+
+        elif match_type == "startswith_any":
+            if any(pk_norm.startswith(p.lower()) for p in r.get("patterns", [])):
+                family = name
+                break
+
+        elif match_type == "regex":
+            if re.search(r["pattern"], product_key):
+                family = name
+                break
+
+    if not family:
+        family = PRODUCT_RULES.get("defaults", {}).get(
+            "unknown_family_name", "Other / Misc"
+        )
+
+    # Vendor heuristic: use prefix before ":" if present
+    vendor = None
+    if PRODUCT_RULES.get("defaults", {}).get("vendor_from_prefix", True):
+        if ":" in product_key:
+            vendor = product_key.split(":", 1)[0]
+
+    if not vendor:
+        vendor = "unknown_vendor"
+
+    return {"vendor": vendor, "family": family}
+
+
 # ------------------------------------------------------------
 #  POSTGRES
 # ------------------------------------------------------------
@@ -70,6 +159,7 @@ def init_db(cfg: Dict[str, Any]):
     """
     Create the product metrics table if it doesn't exist.
     One row per (date, site, product).
+    Also ensure vendor/product_family columns exist.
     """
     conn = pg_connect(cfg)
     cur = conn.cursor()
@@ -80,6 +170,9 @@ def init_db(cfg: Dict[str, Any]):
         site_label     TEXT NOT NULL,
         site_tag       TEXT NOT NULL,
         product        TEXT NOT NULL,
+
+        vendor         TEXT,
+        product_family TEXT,
 
         open_crit      INTEGER NOT NULL,
         open_high      INTEGER NOT NULL,
@@ -101,6 +194,16 @@ def init_db(cfg: Dict[str, Any]):
 
         PRIMARY KEY (snapshot_date, site_label, product)
     );
+    """)
+
+    # For older installs, make sure the new columns exist.
+    cur.execute("""
+        ALTER TABLE daily_product_metrics
+        ADD COLUMN IF NOT EXISTS vendor TEXT;
+    """)
+    cur.execute("""
+        ALTER TABLE daily_product_metrics
+        ADD COLUMN IF NOT EXISTS product_family TEXT;
     """)
 
     conn.commit()
@@ -142,39 +245,51 @@ def write_product_metrics(
     cur = conn.cursor()
 
     for (site_label, product), d in metrics.items():
-        tag = label_to_tag.get(site_label, "UNGROUPED" if site_label == ungrouped else site_label)
+        tag = label_to_tag.get(
+            site_label,
+            "UNGROUPED" if site_label == ungrouped else site_label
+        )
+
+        cls = classify_product(product)
+        vendor = cls["vendor"]
+        family = cls["family"]
 
         cur.execute("""
         INSERT INTO daily_product_metrics (
             snapshot_date, site_label, site_tag, product,
+            vendor, product_family,
             open_crit, open_high, open_medium, open_low, open_total,
             new_crit, new_high, new_medium, new_low, new_total,
             fixed_crit, fixed_high, fixed_medium, fixed_low, fixed_total
         )
         VALUES (%s,%s,%s,%s,
+                %s,%s,
                 %s,%s,%s,%s,%s,
                 %s,%s,%s,%s,%s,
                 %s,%s,%s,%s,%s)
         ON CONFLICT (snapshot_date, site_label, product)
         DO UPDATE SET
-            site_tag    = EXCLUDED.site_tag,
-            open_crit   = EXCLUDED.open_crit,
-            open_high   = EXCLUDED.open_high,
-            open_medium = EXCLUDED.open_medium,
-            open_low    = EXCLUDED.open_low,
-            open_total  = EXCLUDED.open_total,
-            new_crit    = EXCLUDED.new_crit,
-            new_high    = EXCLUDED.new_high,
-            new_medium  = EXCLUDED.new_medium,
-            new_low     = EXCLUDED.new_low,
-            new_total   = EXCLUDED.new_total,
-            fixed_crit  = EXCLUDED.fixed_crit,
-            fixed_high  = EXCLUDED.fixed_high,
-            fixed_medium= EXCLUDED.fixed_medium,
-            fixed_low   = EXCLUDED.fixed_low,
-            fixed_total = EXCLUDED.fixed_total;
+            site_tag       = EXCLUDED.site_tag,
+            vendor         = EXCLUDED.vendor,
+            product_family = EXCLUDED.product_family,
+            open_crit      = EXCLUDED.open_crit,
+            open_high      = EXCLUDED.open_high,
+            open_medium    = EXCLUDED.open_medium,
+            open_low       = EXCLUDED.open_low,
+            open_total     = EXCLUDED.open_total,
+            new_crit       = EXCLUDED.new_crit,
+            new_high       = EXCLUDED.new_high,
+            new_medium     = EXCLUDED.new_medium,
+            new_low        = EXCLUDED.new_low,
+            new_total      = EXCLUDED.new_total,
+            fixed_crit     = EXCLUDED.fixed_crit,
+            fixed_high     = EXCLUDED.fixed_high,
+            fixed_medium   = EXCLUDED.fixed_medium,
+            fixed_low      = EXCLUDED.fixed_low,
+            fixed_total    = EXCLUDED.fixed_total;
         """, (
             date, site_label, tag, product,
+            vendor, family,
             d["open_crit"], d["open_high"], d["open_medium"], d["open_low"], d["open_total"],
             d["new_crit"], d["new_high"], d["new_medium"], d["new_low"], d["new_total"],
             d["fixed_crit"], d["fixed_high"], d["fixed_medium"], d["fixed_low"], d["fixed_total"],
