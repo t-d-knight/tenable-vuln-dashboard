@@ -1,7 +1,10 @@
-# Order matters: first matching rule wins
+# ORDER MATTERS — first matching rule wins
 
 rules:
-  # Browsers
+
+  ########################################################
+  # BROWSERS
+  ########################################################
   - name: "Mozilla Firefox"
     match: "contains"
     pattern: "firefox"
@@ -14,40 +17,59 @@ rules:
     match: "contains"
     pattern: "edge"
 
-  # Adobe
+  ########################################################
+  # ADOBE (ACROBAT, CC, LEGACY RUNTIMES)
+  ########################################################
   - name: "Adobe Acrobat / Reader"
-    match: "startswith"
-    pattern: "adobe:acrobat"
-
-  - name: "Adobe Acrobat / Reader"
-    match: "startswith"
-    pattern: "adobe:acrobat_reader"
+    match: "startswith_any"
+    patterns:
+      - "adobe:acrobat"
+      - "adobe:acrobat_reader"
 
   - name: "Adobe Creative Cloud Apps"
-    match: "startswith"
-    pattern: "adobe:photoshop"
+    match: "startswith_any"
+    patterns:
+      - "adobe:photoshop"
+      - "adobe:illustrator"
+      - "adobe:indesign"
+      - "adobe:media_encoder"
+      - "adobe:premiere_pro"
+      - "adobe:premiere_pro_cc"
+      - "adobe:digital_editions"
+      - "adobe:lightroom"
+      - "adobe:creative_cloud"
 
-  - name: "Adobe Creative Cloud Apps"
-    match: "startswith"
-    pattern: "adobe:illustrator"
+  - name: "Adobe Legacy Runtimes"
+    match: "startswith_any"
+    patterns:
+      - "adobe:air"
+      - "adobe:flash_player"
+      - "adobe:shockwave_player"
+      - "adobe:svg_viewer"
 
-  - name: "Adobe Creative Cloud Apps"
-    match: "startswith"
-    pattern: "adobe:indesign"
-
-  # Java / runtimes
-  - name: "Java Runtime / Corretto"
+  ########################################################
+  # JAVA / RUNTIMES
+  ########################################################
+  - name: "Java Runtime (JRE/JDK)"
     match: "contains_any"
-    patterns: ["java", "corretto"]
+    patterns:
+      - "oracle:jre"
+      - "oracle:jdk"
+      - "jdk "
+      - "jre "
+      - "java runtime"
+      - "corretto"
 
-  # Web servers & configs
-  - name: "Web Server Config Weakness"
+  ########################################################
+  # WEB SERVERS & CONFIG
+  ########################################################
+  - name: "Web Server Configuration Weakness"
     match: "startswith_any"
     patterns:
       - "Web Servers -"
-      - "CGI abuses -"
-      - "Web Servers :"
       - "Web Server -"
+      - "Web Servers :"
+      - "CGI abuses"
 
   - name: "Apache HTTP Server"
     match: "startswith"
@@ -57,49 +79,272 @@ rules:
     match: "contains"
     pattern: "apache:tomcat"
 
-  # Microsoft platforms
-  - name: "Microsoft Windows OS"
+  ########################################################
+  # MICROSOFT O/S (CLIENT + SERVER)
+  ########################################################
+  - name: "Microsoft Windows OS - Client"
     match: "contains_any"
-    patterns: ["windows -", "windows :"]
+    patterns:
+      - "microsoft:windows_10"
+      - "microsoft:windows_11"
+      - "microsoft:windows_7"
+      - "microsoft:windows_8"
+      - "microsoft:windows_subsystem_for_linux"
+      - "windows:terminal"
+      - "microsoft:3d_builder"
+      - "microsoft:3d_viewer"
+      - "microsoft:snip_and_sketch"
 
-  - name: "Microsoft Office"
+  - name: "Microsoft Windows OS - Server"
+    match: "startswith_any"
+    patterns:
+      - "microsoft:windows_server_"
+      - "microsoft:azure_stack_hci"
+
+  - name: "Microsoft Windows OS (Generic)"
+    match: "startswith"
+    pattern: "microsoft:windows"
+
+  ########################################################
+  # MICROSOFT OFFICE / COLLAB / DEV / DATA
+  ########################################################
+  - name: "Microsoft Office Desktop Apps"
+    match: "startswith_any"
+    patterns:
+      - "microsoft:access"
+      - "microsoft:onenote"
+      - "microsoft:project_server"
+      - "microsoft:powerpoint"
+      - "microsoft:publisher"
+      - "microsoft:visio"
+      - "microsoft:visio_viewer"
+      - "microsoft:infopath"
+
+  - name: "Microsoft Collaboration Apps"
+    match: "startswith_any"
+    patterns:
+      - "microsoft:teams"
+      - "microsoft:skype_for_business"
+      - "microsoft:lync_basic"
+      - "microsoft:live_meeting"
+
+  - name: "Microsoft SQL & Data Platform"
+    match: "startswith_any"
+    patterns:
+      - "microsoft:sql_server"
+      - "microsoft:sql_server_management_studio"
+      - "microsoft:sql_server_reporting_services"
+      - "microsoft:azure_devops_server"
+      - "microsoft:endpoint_configuration_manager"
+
+  - name: "Microsoft Codec / Video Extensions"
+    match: "startswith_any"
+    patterns:
+      - "microsoft:hevc_video_extensions"
+      - "microsoft:high_efficiency_video_coding"
+      - "microsoft:vp9_extensions"
+      - "microsoft:vp9_video_extensions"
+      - "microsoft:web_media_extensions"
+      - "microsoft:webp_image_extension"
+
+  - name: "Microsoft Developer Tools"
+    match: "startswith_any"
+    patterns:
+      - "microsoft:visual_studio"
+      - "microsoft:visual_studio_code"
+      - "microsoft:visual_basic"
+      - "microsoft:visual_studio_tools_for_applications"
+
+  - name: "Microsoft Security Components"
+    match: "startswith_any"
+    patterns:
+      - "microsoft:malware_protection_engine"
+      - "microsoft:system_center_endpoint_protection"
+      - "microsoft:windows_defender"
+      - "microsoft:remote_desktop"
+      - "microsoft:remote_desktop_protocol"
+      - "microsoft:message_queuing"
+
+  ########################################################
+  # DELL PLATFORM
+  ########################################################
+  - name: "Dell BIOS / Firmware"
+    match: "startswith_any"
+    patterns:
+      - "dell:bios"
+      - "dell:emc_idrac8"
+      - "dell:emc_idrac9"
+      - "dell:idrac9"
+      - "dell:remote_access_card"
+
+  - name: "Dell Utilities / Client Platform Tools"
+    match: "startswith_any"
+    patterns:
+      - "dell:display_manager"
+      - "dell:peripheral_manager"
+      - "dell:trusted_device_agent"
+      - "dell:dbutil"
+
+  ########################################################
+  # CITRIX / VDI
+  ########################################################
+  - name: "Citrix Workspace / VDI"
+    match: "startswith_any"
+    patterns:
+      - "citrix:workspace"
+      - "citrix:virtual_apps_and_desktops"
+
+  ########################################################
+  # CISCO / FORTINET / NETWORK OS
+  ########################################################
+  - name: "Cisco Network OS / Appliances"
+    match: "startswith_any"
+    patterns:
+      - "cisco:ios"
+      - "cisco:ios_xe"
+      - "cisco:access_points"
+      - "cisco:wireless_lan_controller_software"
+      - "CISCO - Unsupported Cisco Operating System"
+
+  - name: "Cisco Collaboration (Webex / Jabber / TelePresence)"
     match: "contains_any"
-    patterns: ["word", "excel", "outlook", "office", "powerpoint", "access"]
+    patterns:
+      - "cisco:jabber"
+      - "cisco:webex"
+      - "cisco:telepresence"
 
-  - name: "Microsoft .NET / Azure Data Tools"
+  - name: "Fortinet FortiClient"
+    match: "startswith"
+    pattern: "fortinet:forticlient"
+
+  ########################################################
+  # REMOTE ACCESS / SSH / FILE TRANSFER
+  ########################################################
+  - name: "Remote Support / Remote Admin"
     match: "contains_any"
-    patterns: [".net", "azure data studio"]
+    patterns:
+      - "dameware"
+      - "teamviewer"
+      - "ultravnc"
+      - "VNC Server Unauthenticated Access"
 
-  # Endpoint tools
-  - name: "Dell SupportAssist"
-    match: "contains"
-    pattern: "supportassist"
-  
-  - name: "Dell BIOS"
-    match: "contains"
-    pattern: "dell:bios"
+  - name: "SSH / Terminal Clients"
+    match: "contains_any"
+    patterns:
+      - "putty"
+      - "securecrt"
+      - "openssh"
+      - "dropbear_ssh"
 
-  - name: "VMware Tools"
+  - name: "SFTP / File Transfer Tools"
+    match: "contains_any"
+    patterns:
+      - "winscp"
+      - "winrar"
+      - "filezilla"
+
+  - name: "VPN Clients"
+    match: "contains_any"
+    patterns:
+      - "openvpn"
+      - "globalprotect"
+      - "forticlient"
+
+  ########################################################
+  # DATABASES
+  ########################################################
+  - name: "Oracle Database"
     match: "startswith"
-    pattern: "vmware:tools"
+    pattern: "oracle:database_server"
 
-  - name: "Nessus Agent"
+  - name: "MySQL / MariaDB"
+    match: "contains_any"
+    patterns:
+      - "oracle:mysql"
+      - "mysql:mysql_workbench"
+
+  - name: "PostgreSQL"
     match: "startswith"
-    pattern: "tenable:nessus_agent"
+    pattern: "postgresql:postgresql"
 
-  - name: "VLC Media Player"
-    match: "startswith"
-    pattern: "videolan:vlc_media_player"
+  ########################################################
+  # SSL / TLS / CERTIFICATE FINDINGS
+  ########################################################
+  - name: "SSL/TLS & Certificate Hygiene"
+    match: "contains_any"
+    patterns:
+      - "General - SSL"
+      - "TLS Version"
+      - "openssl"
+      - "md5"
+      - "SSLv3"
+      - "POODLE"
 
-  # Fallbacks
-  - name: "7-Zip"
-    match: "startswith"
-    pattern: "7-zip:7-zip"
+  ########################################################
+  # NETWORK / INFRASTRUCTURE WEAKNESSES
+  ########################################################
+  - name: "Network Protocol / Infrastructure Issues"
+    match: "contains_any"
+    patterns:
+      - "DNS -"
+      - "SNMP -"
+      - "SCADA -"
+      - "NTP"
+      - "ICMP"
+      - "Backdoors -"
+      - "SSH Weak"
+      - "Telnet"
+      - "X Server"
+      - "mDNS"
 
+  ########################################################
+  # IMAGING / PDF / UTILITIES
+  ########################################################
+  - name: "PDF Viewers / Renderers"
+    match: "contains_any"
+    patterns:
+      - "foxit"
+      - "ghostscript"
+
+  - name: "Imaging / Graphics Tools"
+    match: "contains_any"
+    patterns:
+      - "imagemagick"
+      - "greenshot"
+      - "irfanview"
+
+  ########################################################
+  # DEV RUNTIMES / SCRIPTING
+  ########################################################
+  - name: "Developer Runtime Tools"
+    match: "contains_any"
+    patterns:
+      - "node.js"
+      - "python"
+      - "jquery"
+      - "git_for_windows"
+      - "node-tar"
+      - "r-project"
+
+  ########################################################
+  # MEDIA / VIDEO / ZOOM
+  ########################################################
   - name: "Zoom"
-    match: "contains"
-    pattern: ["zoom:zoom","zoom:meetings"]
+    match: "contains_any"
+    patterns:
+      - "zoom:zoom"
+      - "zoom:meetings"
+      - "zoom:zoom_cloud_meetings"
+
+  - name: "Media Players / Codec Apps"
+    match: "contains_any"
+    patterns:
+      - "itunes"
+      - "quicktime"
+      - "vlc_media_player"
+      - "geforce_experience"
+
 
 defaults:
-  vendor_from_prefix: true   # use text before ":" as vendor if present
+  vendor_from_prefix: true
   unknown_family_name: "Other / Misc"
