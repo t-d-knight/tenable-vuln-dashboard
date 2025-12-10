@@ -64,7 +64,7 @@ rules:
 
   - name: "Microsoft Office"
     match: "contains_any"
-    patterns: ["word", "excel", "outlook", "office"]
+    patterns: ["word", "excel", "outlook", "office", "powerpoint", "access"]
 
   - name: "Microsoft .NET / Azure Data Tools"
     match: "contains_any"
@@ -74,6 +74,10 @@ rules:
   - name: "Dell SupportAssist"
     match: "contains"
     pattern: "supportassist"
+  
+  - name: "Dell BIOS"
+    match: "contains"
+    pattern: "dell:bios"
 
   - name: "VMware Tools"
     match: "startswith"
@@ -91,6 +95,10 @@ rules:
   - name: "7-Zip"
     match: "startswith"
     pattern: "7-zip:7-zip"
+
+  - name: "Zoom"
+    match: "contains"
+    pattern: ["zoom:zoom","zoom:meetings"]
 
 defaults:
   vendor_from_prefix: true   # use text before ":" as vendor if present
