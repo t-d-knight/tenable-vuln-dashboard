@@ -343,8 +343,167 @@ rules:
       - "quicktime"
       - "vlc_media_player"
       - "geforce_experience"
+      
+  ########################################################
+  # MICROSOFT .NET / DATA / SYSINTERNALS
+  ########################################################
+  - family: "Microsoft .NET / ASP.NET"
+    match_any:
+      - "microsoft:.net_core"
+      - "microsoft:asp.net_core"
+      - "microsoft:.net_framework"
+
+  - family: "Microsoft SQL / Data Tools"
+    match_any:
+      - "microsoft:ole_db_driver_for_sql_server"
+      - "Windows - Microsoft Azure Data Studio"
+
+  - family: "Microsoft XML Core Services"
+    match_any:
+      - "microsoft:xml_core_services"
+
+  - family: "Microsoft Sysinternals / Sysmon"
+    match_any:
+      - "Sysinternals Sysmon"
+
+  ########################################################
+  # MICROSOFT OFFICE & COLLAB – CORE APPS
+  ########################################################
+  - family: "Microsoft Office - Core Apps"
+    match_any:
+      - "microsoft:office"
+      - "microsoft:excel"
+      - "microsoft:word"
+      - "microsoft:outlook"
+      - "microsoft:office_compatibility_pack"
+      - "microsoft:office_web_apps"
+      - "microsoft:office_online_server"
+      - "microsoft:sharepoint_server"
+
+  ########################################################
+  # VMWARE PLATFORM
+  ########################################################
+  - family: "VMware vSphere / ESXi / Tools"
+    match_any:
+      - "vmware:tools"
+      - "vmware:esxi"
+      - "vmware:esx_server"
+      - "vmware:vcenter_server"
+      - "vmware:vsphere_client"
+
+  ########################################################
+  # DELL SUPPORTASSIST / OS RECOVERY
+  ########################################################
+  - family: "Dell SupportAssist / OS Recovery"
+    match_any:
+      - "dell:supportassist"
+      - "Dell SupportAssist OS Recovery Information Disclosure"
+      - "Dell SupportAssist OS Recovery Multiple Vulnerabilities"
+      - "Dell SupportAssist OS Recovery Symbolic Link Attack"
+      - "DSA-2025-403"
+      - "DSA-2025-315"
+      - "DSA-2025-051"
+
+  ########################################################
+  # INTEL PLATFORM DRIVERS
+  ########################################################
+  - family: "Intel Platform Drivers"
+    match_any:
+      - "intel:chipset_device_software"
+      - "intel:dynamic_tuning_technology"
+
+  ########################################################
+  # ENDPOINT SECURITY (AV / EDR)
+  ########################################################
+  - family: "Endpoint Security (AV / EDR)"
+    match_any:
+      - "symantec:endpoint_protection"
+      - "sophos:sophos_anti-virus"
+      - "CrowdStrike Falcon Sensor"
+
+  ########################################################
+  # VULNERABILITY / MGMT AGENTS
+  ########################################################
+  - family: "Vulnerability Scanners / Agents"
+    match_any:
+      - "tenable:nessus_agent"
+
+  ########################################################
+  # UTILITIES – ARCHIVE / EDITORS / NETWORK TOOLS
+  ########################################################
+  - family: "Utilities - Archive / Editors"
+    match_any:
+      - "7-zip:7-zip"
+      - "notepad-plus-plus:notepad"
+      - "rarlab:winrar"
+
+  - family: "Network Tools - Wireshark"
+    match_any:
+      - "wireshark:wireshark"
+
+  ########################################################
+  # WEB / MIDDLEWARE STACKS
+  ########################################################
+  - family: "Java / Middleware - Log4j"
+    match_any:
+      - "apache:log4j"
+
+  - family: "Web Servers / Proxies"
+    match_any:
+      - "nginx:nginx"
+      - "allegro:rom_pager"
+
+  ########################################################
+  # LINUX / UNIX SERVER OS
+  ########################################################
+  - family: "Linux / Unix Server OS"
+    match_any:
+      - "oracle:linux"
+      - "debian:debian_linux"
+      - "canonical:ubuntu_linux"
+      - "centos:centos"
+
+  ########################################################
+  # PRINT / DOC MANAGEMENT
+  ########################################################
+  - family: "Print & Document Management"
+    match_any:
+      - "papercut:papercut_mf"
+
+  ########################################################
+  # REMOTE ADMIN – EXTRA
+  ########################################################
+  - family: "Remote Admin / Screen Sharing"
+    match_any:
+      - "Windows - Devolutions Remote Desktop Manager"
+
+  ########################################################
+  # HPE / ILO
+  ########################################################
+  - family: "HPE iLO / Lights-Out Firmware"
+    match_any:
+      - "hp:integrated_lights-out_firmware"
+
+  ########################################################
+  # WINDOWS CONFIG / HARDENING
+  ########################################################
+  - family: "Windows Configuration / Hardening Findings"
+    match_any:
+      - "Windows - Microsoft Windows Unquoted Service Path Enumeration"
+      - "Windows - Microsoft Windows SMB Registry"
+      - "Windows - Microsoft Windows Update Reboot Required"
+      - "Windows - SizerOne ActiveX Control AddTab Method Remote Buffer Overflow"
+      - "Misc. - LOLDriver Detection (Windows)"
+
+  ########################################################
+  # NETWORK / INFRA FINDINGS – EXTRA
+  ########################################################
+  - family: "Network Protocol / Infra Issues"
+    match_any:
+      - "Misc. - AMQP Cleartext Authentication"
 
 
 defaults:
   vendor_from_prefix: true
   unknown_family_name: "Other / Misc"
+
