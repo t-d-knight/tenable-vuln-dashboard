@@ -146,6 +146,7 @@ rules:
       - "microsoft:vp9_video_extensions"
       - "microsoft:web_media_extensions"
       - "microsoft:webp_image_extension"
+      - "microsoft:mpeg-2_video_extension"
 
   - name: "Microsoft Developer Tools"
     match: "startswith_any"
@@ -198,13 +199,13 @@ rules:
   # CISCO / FORTINET / NETWORK OS
   ########################################################
   - name: "Cisco Network OS / Appliances"
-    match: "startswith_any"
+    match: "contains_any"
     patterns:
       - "cisco:ios"
       - "cisco:ios_xe"
       - "cisco:access_points"
       - "cisco:wireless_lan_controller_software"
-      - "CISCO - Unsupported Cisco Operating System"
+      - "cisco - unsupported cisco operating system"
 
   - name: "Cisco Collaboration (Webex / Jabber / TelePresence)"
     match: "contains_any"
@@ -226,7 +227,8 @@ rules:
       - "dameware"
       - "teamviewer"
       - "ultravnc"
-      - "VNC Server Unauthenticated Access"
+      - "devolutions remote desktop"
+      - "vnc server unauthenticated access"
 
   - name: "SSH / Terminal Clients"
     match: "contains_any"
@@ -240,8 +242,8 @@ rules:
     match: "contains_any"
     patterns:
       - "winscp"
-      - "winrar"
       - "filezilla"
+      - "winrar"
 
   - name: "VPN Clients"
     match: "contains_any"
@@ -273,12 +275,13 @@ rules:
   - name: "SSL/TLS & Certificate Hygiene"
     match: "contains_any"
     patterns:
-      - "General - SSL"
-      - "TLS Version"
+      - "general - ssl"
+      - "tls version"
+      - "ssl version 2"
+      - "ssl version 3"
+      - "poodle"
       - "openssl"
       - "md5"
-      - "SSLv3"
-      - "POODLE"
 
   ########################################################
   # NETWORK / INFRASTRUCTURE WEAKNESSES
@@ -286,16 +289,18 @@ rules:
   - name: "Network Protocol / Infrastructure Issues"
     match: "contains_any"
     patterns:
-      - "DNS -"
-      - "SNMP -"
-      - "SCADA -"
-      - "NTP"
-      - "ICMP"
-      - "Backdoors -"
-      - "SSH Weak"
-      - "Telnet"
-      - "X Server"
-      - "mDNS"
+      - "dns -"
+      - "snmp -"
+      - "scada -"
+      - "ntp"
+      - "icmp"
+      - "backdoors -"
+      - "ssh weak"
+      - "telnet"
+      - "xdmcp"
+      - "x server"
+      - "mdns"
+      - "amqp cleartext"
 
   ########################################################
   # IMAGING / PDF / UTILITIES
@@ -343,7 +348,7 @@ rules:
       - "quicktime"
       - "vlc_media_player"
       - "geforce_experience"
-      
+
   ########################################################
   # MICROSOFT .NET / DATA / SYSINTERNALS
   ########################################################
@@ -352,11 +357,12 @@ rules:
       - "microsoft:.net_core"
       - "microsoft:asp.net_core"
       - "microsoft:.net_framework"
+      - "microsoft:asp.net"
 
   - family: "Microsoft SQL / Data Tools"
     match_any:
       - "microsoft:ole_db_driver_for_sql_server"
-      - "Windows - Microsoft Azure Data Studio"
+      - "windows - microsoft azure data studio"
 
   - family: "Microsoft XML Core Services"
     match_any:
@@ -364,7 +370,7 @@ rules:
 
   - family: "Microsoft Sysinternals / Sysmon"
     match_any:
-      - "Sysinternals Sysmon"
+      - "sysinternals sysmon"
 
   ########################################################
   # MICROSOFT OFFICE & COLLAB – CORE APPS
@@ -390,6 +396,8 @@ rules:
       - "vmware:esx_server"
       - "vmware:vcenter_server"
       - "vmware:vsphere_client"
+      - "vmware:vrealize_operations"
+      - "vmware:workstation"
 
   ########################################################
   # DELL SUPPORTASSIST / OS RECOVERY
@@ -397,18 +405,20 @@ rules:
   - family: "Dell SupportAssist / OS Recovery"
     match_any:
       - "dell:supportassist"
-      - "Dell SupportAssist OS Recovery Information Disclosure"
-      - "Dell SupportAssist OS Recovery Multiple Vulnerabilities"
-      - "Dell SupportAssist OS Recovery Symbolic Link Attack"
-      - "DSA-2025-403"
-      - "DSA-2025-315"
-      - "DSA-2025-051"
+      - "dell supportassist os recovery information disclosure"
+      - "dell supportassist os recovery multiple vulnerabilities"
+      - "dell supportassist os recovery symbolic link attack"
+      - "dsa-2025-403"
+      - "dsa-2025-315"
+      - "dsa-2025-051"
 
   ########################################################
-  # INTEL PLATFORM DRIVERS
+  # INTEL PLATFORM DRIVERS / FIRMWARE
   ########################################################
-  - family: "Intel Platform Drivers"
+  - family: "Intel Platform / Firmware"
     match_any:
+      - "intel:active_management_technology"
+      - "intel:active_management_technology_firmware"
       - "intel:chipset_device_software"
       - "intel:dynamic_tuning_technology"
 
@@ -418,8 +428,10 @@ rules:
   - family: "Endpoint Security (AV / EDR)"
     match_any:
       - "symantec:endpoint_protection"
+      - "symantec:sonar"
       - "sophos:sophos_anti-virus"
-      - "CrowdStrike Falcon Sensor"
+      - "sophos:intercept_x_endpoint-virus"
+      - "crowdstrike falcon sensor"
 
   ########################################################
   # VULNERABILITY / MGMT AGENTS
@@ -452,6 +464,8 @@ rules:
     match_any:
       - "nginx:nginx"
       - "allegro:rom_pager"
+      - "acme_labs:thttpd"
+      - "haproxy:haproxy"
 
   ########################################################
   # LINUX / UNIX SERVER OS
@@ -471,11 +485,12 @@ rules:
       - "papercut:papercut_mf"
 
   ########################################################
-  # REMOTE ADMIN – EXTRA
+  # REMOTE ADMIN – EXTRA (ALREADY COVERED BY REMOTE ADMIN,
+  # BUT LEAVING AS FAMILY OVERRIDE IF NEEDED)
   ########################################################
-  - family: "Remote Admin / Screen Sharing"
+  - family: "Mail Client - Thunderbird"
     match_any:
-      - "Windows - Devolutions Remote Desktop Manager"
+      - "mozilla:thunderbird"
 
   ########################################################
   # HPE / ILO
@@ -489,21 +504,42 @@ rules:
   ########################################################
   - family: "Windows Configuration / Hardening Findings"
     match_any:
-      - "Windows - Microsoft Windows Unquoted Service Path Enumeration"
-      - "Windows - Microsoft Windows SMB Registry"
-      - "Windows - Microsoft Windows Update Reboot Required"
-      - "Windows - SizerOne ActiveX Control AddTab Method Remote Buffer Overflow"
-      - "Misc. - LOLDriver Detection (Windows)"
+      - "windows - microsoft windows unquoted service path enumeration"
+      - "windows - microsoft windows smb registry"
+      - "windows - microsoft windows update reboot required"
+      - "windows - sizerone activex control addtab method remote buffer overflow"
+      - "misc. - loldriver detection (windows)"
 
   ########################################################
-  # NETWORK / INFRA FINDINGS – EXTRA
+  # WINDOWS PLATFORM FINDINGS (CATCH-ALL FOR WINDOWS-*
   ########################################################
-  - family: "Network Protocol / Infra Issues"
+  - family: "Windows Platform Findings"
     match_any:
-      - "Misc. - AMQP Cleartext Authentication"
+      - "windows - "
+      - "windows : "
 
+  ########################################################
+  # MANAGEENGINE
+  ########################################################
+  - family: "ManageEngine"
+    match_any:
+      - "zohocorp:manageengine_servicedesk_plus"
+
+  ########################################################
+  # PHP (WEB STACK)
+  ########################################################
+  - name: "PHP"
+    match: "startswith"
+    pattern: "php:php"
+
+  ########################################################
+  # AUTODESK
+  ########################################################
+  - family: "Autodesk Applications"
+    match_any:
+      - "autodesk:autocad"
+      - "autodesk:design_review"
 
 defaults:
   vendor_from_prefix: true
   unknown_family_name: "Other / Misc"
-
