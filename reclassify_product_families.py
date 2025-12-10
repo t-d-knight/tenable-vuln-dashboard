@@ -137,7 +137,8 @@ def apply_mapping(conn, mapping: Dict[str, Dict[str, str]], dry_run: bool = Fals
         f"(changed={changed}, still_misc_or_unchanged={unchanged}, dry_run={dry_run})"
     )
 
-yamldef main():
+
+def main():
     parser = argparse.ArgumentParser(
         description="Retroactively reclassify product/vender families in daily_product_metrics"
     )
