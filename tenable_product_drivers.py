@@ -80,46 +80,92 @@ def _norm(text: str) -> str:
 
 def classify_product(product_key: str) -> Dict[str, str]:
     """
-    Map a raw product_key (e.g. 'adobe:acrobat_reader',
-    'Web Servers - HTTP TRACE / TRACK Methods Allowed') to:
-      - vendor
-      - product_family (bucket)
-
-    Uses rules from product_groups.yaml. First matching rule wins.
+    Map a raw product_key like 'oracle:jre' or
+    'General - SSL Certificate Expiry'
+    to a { vendor, family } classification using PRODUCT_RULES.
     """
-    pk_norm = _norm(product_key)
+    pk_norm = (product_key or "").lower()
     rules = PRODUCT_RULES.get("rules", [])
     family = None
 
+    # --------------------------------------------------------
+    # PASS 1: rules that use `match` + pattern/patterns
+    #        (supports both `name` and `family` labels)
+    # --------------------------------------------------------
     for r in rules:
         match_type = r.get("match")
-        name = r["name"]
+        # allow either `name` or `family` in YAML rule
+        label = r.get("name") or r.get("family")
+        if not label:
+            continue  # skip invalid rule
+
+        # nothing to do in this pass if no explicit match type
+        if not match_type:
+            continue
+
+        # normalise patterns
+        pat = r.get("pattern")
+        patterns = r.get("patterns", [])
 
         if match_type == "contains":
-            if r["pattern"].lower() in pk_norm:
-                family = name
-                break
+            if isinstance(pat, list):
+                if any(p.lower() in pk_norm for p in pat):
+                    family = label
+                    break
+            else:
+                if pat and str(pat).lower() in pk_norm:
+                    family = label
+                    break
 
         elif match_type == "startswith":
-            if pk_norm.startswith(r["pattern"].lower()):
-                family = name
-                break
+            if isinstance(pat, list):
+                if any(pk_norm.startswith(p.lower()) for p in pat):
+                    family = label
+                    break
+            else:
+                if pat and pk_norm.startswith(str(pat).lower()):
+                    family = label
+                    break
 
         elif match_type == "contains_any":
-            if any(p.lower() in pk_norm for p in r.get("patterns", [])):
-                family = name
+            if any(p.lower() in pk_norm for p in patterns):
+                family = label
                 break
 
         elif match_type == "startswith_any":
-            if any(pk_norm.startswith(p.lower()) for p in r.get("patterns", [])):
-                family = name
+            if any(pk_norm.startswith(p.lower()) for p in patterns):
+                family = label
                 break
 
-        elif match_type == "regex":
-            if re.search(r["pattern"], product_key):
-                family = name
+        elif match_type == "regex" and pat:
+            if re.search(str(pat), product_key):
+                family = label
                 break
 
+    # --------------------------------------------------------
+    # PASS 2: family-only rules that use `match_any`
+    #         (no `match` field)
+    # --------------------------------------------------------
+    if not family:
+        for r in rules:
+            label = r.get("family") or r.get("name")
+            if not label:
+                continue
+
+            match_any = r.get("match_any")
+            if not match_any:
+                continue
+
+            for pat in match_any:
+                if pat.lower() in pk_norm:
+                    family = label
+                    break
+            if family:
+                break
+
+    # --------------------------------------------------------
+    # Defaults
+    # --------------------------------------------------------
     if not family:
         family = PRODUCT_RULES.get("defaults", {}).get(
             "unknown_family_name", "Other / Misc"
