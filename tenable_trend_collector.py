@@ -262,7 +262,7 @@ def start_export(sess: requests.Session, filters: Dict[str, Any]) -> str:
 
 
 def poll_export(sess: requests.Session, uuid: str, interval: int = 10) -> Dict[str, Any]:
-    url = f"{sess.base_url}/vulns/export/{uuid}/status}"
+    url = f"{sess.base_url}/vulns/export/{uuid}/status"
     start = time.time()
 
     while True:
