@@ -70,33 +70,41 @@ def normalise_hostname(name: Optional[str]) -> Optional[str]:
 # Matching logic
 ############################################################
 
-def upsert_unified_for_pair(
-    cur,
-    norm_hostname: str,
-    cs_aid: Optional[str],
-    tn_uuid: Optional[str],
-) -> int:
+def upsert_unified_for_pair(cur, norm_hostname: str, cs_aid: str, tn_uuid: str):
     """
-    Upsert a unified_assets row for the given normalised hostname
-    and wire it to CS/Tenable rows. Returns unified_assets.id.
+    Create or update a unified asset row based on a normalised hostname,
+    wiring in the CrowdStrike AID and Tenable UUID.
+
+    Uses your existing schema:
+      - norm_hostname (unique)
+      - canonical_hostname
+      - cs_aid, tenable_uuid
+      - has_cs, has_tenable, updated_at
     """
     cur.execute(
         """
-        INSERT INTO asset_inventory.unified_assets (
+        INSERT INTO asset_inventory.unified_assets AS u (
             norm_hostname,
-            primary_cs_aid,
-            primary_tn_uuid
+            canonical_hostname,
+            cs_aid,
+            tenable_uuid,
+            has_cs,
+            has_tenable
         )
-        VALUES (%s, %s, %s)
-        ON CONFLICT (norm_hostname) DO UPDATE
-          SET primary_cs_aid = COALESCE(EXCLUDED.primary_cs_aid,
-                                        asset_inventory.unified_assets.primary_cs_aid),
-              primary_tn_uuid = COALESCE(EXCLUDED.primary_tn_uuid,
-                                         asset_inventory.unified_assets.primary_tn_uuid)
-        RETURNING id;
+        VALUES (%s, %s, %s, %s, TRUE, TRUE)
+        ON CONFLICT (norm_hostname)
+        DO UPDATE
+        SET
+            cs_aid        = COALESCE(u.cs_aid, EXCLUDED.cs_aid),
+            tenable_uuid  = COALESCE(u.tenable_uuid, EXCLUDED.tenable_uuid),
+            has_cs        = u.has_cs OR EXCLUDED.has_cs,
+            has_tenable   = u.has_tenable OR EXCLUDED.has_tenable,
+            updated_at    = NOW();
         """,
-        (norm_hostname, cs_aid, tn_uuid),
+        # For now, just use the normalised hostname as the canonical name too.
+        (norm_hostname, norm_hostname, cs_aid, tn_uuid),
     )
+
     unified_id = cur.fetchone()[0]
 
     if cs_aid:
