@@ -116,7 +116,6 @@ def cs_get_device_details(token: str, aids: list[str]) -> list[Dict[str, Any]]:
 # Postgres upsert helper
 ############################################################
 
-
 def upsert_device(cur, dev: dict) -> None:
     """
     Upsert a single CrowdStrike device into asset_inventory.cs_assets_raw
