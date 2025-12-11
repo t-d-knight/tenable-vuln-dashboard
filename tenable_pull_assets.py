@@ -285,7 +285,7 @@ def upsert_asset(cur, a: Dict[str, Any]):
             raw              = EXCLUDED.raw,
             collected_at     = NOW();
         """,
-        {
+                {
             "tn_uuid": aid,
             "hostname": hostname,
             "fqdn": fqdn,
@@ -300,9 +300,12 @@ def upsert_asset(cur, a: Dict[str, Any]):
             "mac_addrs": _to_arr(macs),
             "first_seen": _to_ts(a.get("first_seen")),
             "last_seen": _to_ts(a.get("last_seen")),
-            "tags": a.get("tags") or [],
+
+            # 🔹 FIX: wrap tags as JSONB, same as raw
+            "tags": psycopg2.extras.Json(a.get("tags") or []),
             "raw": psycopg2.extras.Json(a),
         },
+
     )
 
 
