@@ -45,7 +45,7 @@ INSERT INTO asset_inventory.unified_assets (
 )
 SELECT
     c.hostname,
-    lower(trim(c.hostname)),
+    lower(trim(c.hostname)) AS norm_hostname,
     c.cs_aid,
     TRUE,
     c.last_seen,
@@ -56,13 +56,27 @@ SELECT
     NOW(),
     NOW()
 FROM asset_inventory.cs_assets_raw c
-LEFT JOIN asset_inventory.unified_assets ua
-       ON ua.cs_aid = c.cs_aid
-WHERE ua.id IS NULL
-  AND c.hostname IS NOT NULL
-  AND c.hostname <> '';
+WHERE c.hostname IS NOT NULL
+  AND c.hostname <> ''
+ON CONFLICT (norm_hostname)
+DO UPDATE SET
+    cs_aid        = EXCLUDED.cs_aid,
+    has_cs        = TRUE,
+    last_seen_cs  = GREATEST(asset_inventory.unified_assets.last_seen_cs, EXCLUDED.last_seen_cs),
+    -- first_seen_any = earliest of existing vs new
+    first_seen_any = LEAST(
+        COALESCE(asset_inventory.unified_assets.first_seen_any, EXCLUDED.first_seen_any),
+        EXCLUDED.first_seen_any
+    ),
+    -- last_seen_any = latest of existing vs new
+    last_seen_any = GREATEST(
+        COALESCE(asset_inventory.unified_assets.last_seen_any, EXCLUDED.last_seen_any),
+        EXCLUDED.last_seen_any
+    ),
+    platform      = COALESCE(asset_inventory.unified_assets.platform, EXCLUDED.platform),
+    os_version    = COALESCE(asset_inventory.unified_assets.os_version, EXCLUDED.os_version),
+    updated_at    = NOW();
 """
-
 
 ############################################################
 # Backfill Tenable-only rows
@@ -81,7 +95,7 @@ INSERT INTO asset_inventory.unified_assets (
 )
 SELECT
     t.hostname,
-    lower(trim(t.hostname)),
+    lower(trim(t.hostname)) AS norm_hostname,
     t.tenable_uuid,
     TRUE,
     t.last_seen,
@@ -90,12 +104,24 @@ SELECT
     NOW(),
     NOW()
 FROM asset_inventory.tenable_assets_raw t
-LEFT JOIN asset_inventory.unified_assets ua
-       ON ua.tenable_uuid = t.tenable_uuid
-WHERE ua.id IS NULL
-  AND t.hostname IS NOT NULL
-  AND t.hostname <> '';
+WHERE t.hostname IS NOT NULL
+  AND t.hostname <> ''
+ON CONFLICT (norm_hostname)
+DO UPDATE SET
+    tenable_uuid      = EXCLUDED.tenable_uuid,
+    has_tenable       = TRUE,
+    last_seen_tenable = GREATEST(asset_inventory.unified_assets.last_seen_tenable, EXCLUDED.last_seen_tenable),
+    first_seen_any    = LEAST(
+        COALESCE(asset_inventory.unified_assets.first_seen_any, EXCLUDED.first_seen_any),
+        EXCLUDED.first_seen_any
+    ),
+    last_seen_any     = GREATEST(
+        COALESCE(asset_inventory.unified_assets.last_seen_any, EXCLUDED.last_seen_any),
+        EXCLUDED.last_seen_any
+    ),
+    updated_at        = NOW();
 """
+
 
 
 ############################################################
