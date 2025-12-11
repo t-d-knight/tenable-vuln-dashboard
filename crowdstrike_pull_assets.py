@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
+import os
+import time
+import yaml
 import requests
 import psycopg2
 import psycopg2.extras
-import time
-import yaml
+import argparse
 from datetime import datetime
+from typing import Dict, Any
 
-############################################################
-# Load Config
-############################################################
+# Globals initialised in main()
+CS_BASE_URL = None
+CS_CLIENT_ID = None
+CS_CLIENT_SECRET = None
+PG_CONN = None
+
+
 def load_config(path: str = "config.yaml") -> Dict[str, Any]:
     with open(path, "r") as f:
         cfg = yaml.safe_load(f) or {}
@@ -31,7 +38,6 @@ def load_config(path: str = "config.yaml") -> Dict[str, Any]:
             cfg.setdefault("database", {})
             cfg["database"].update(secrets["database"])
 
-        # 🔹 NEW: pull in CrowdStrike creds
         if "crowdstrike" in secrets:
             cfg.setdefault("crowdstrike", {})
             cfg["crowdstrike"].update(secrets["crowdstrike"])
@@ -40,111 +46,162 @@ def load_config(path: str = "config.yaml") -> Dict[str, Any]:
 
 
 ############################################################
-# Authenticate to CrowdStrike
+# CrowdStrike auth + API helpers
 ############################################################
-def cs_auth():
+
+def cs_auth() -> str:
+    global CS_BASE_URL, CS_CLIENT_ID, CS_CLIENT_SECRET
     url = f"{CS_BASE_URL}/oauth2/token"
-    r = requests.post(url, data={
-        "client_id": CS_CLIENT_ID,
-        "client_secret": CS_CLIENT_SECRET
-    })
+    r = requests.post(
+        url,
+        data={
+            "client_id": CS_CLIENT_ID,
+            "client_secret": CS_CLIENT_SECRET,
+        },
+    )
     r.raise_for_status()
     return r.json()["access_token"]
 
-############################################################
-# Get full device AID list
-############################################################
-def cs_get_device_aids(token):
-    aids = []
-    offset = None
 
+def cs_get_device_aids(token: str) -> list[str]:
+    """Example: pull all AIDs from /devices/queries/devices/v1"""
+    headers = {"Authorization": f"Bearer {token}"}
+    aids: list[str] = []
+    url = f"{CS_BASE_URL}/devices/queries/devices/v1"
+    params = {"limit": 500}
     while True:
-        params = {"limit": 5000}
-        if offset:
-            params["offset"] = offset
-
-        r = requests.get(
-            f"{CS_BASE_URL}/devices/queries/devices/v1",
-            headers={"Authorization": f"Bearer {token}"},
-            params=params
-        )
+        r = requests.get(url, headers=headers, params=params)
         r.raise_for_status()
         data = r.json()
         aids.extend(data.get("resources", []))
-
-        offset = data.get("meta", {}).get("pagination", {}).get("offset")
-        if not offset:
+        next_token = data.get("meta", {}).get("pagination", {}).get("after")
+        if not next_token:
             break
-
+        params["after"] = next_token
     return aids
 
-############################################################
-# Get device details in batches
-############################################################
-def cs_get_device_details(token, aids):
-    all_devices = []
-    chunk = 100
 
-    for i in range(0, len(aids), chunk):
-        batch = aids[i:i+chunk]
-        r = requests.post(
-            f"{CS_BASE_URL}/devices/entities/devices/v2",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"ids": batch}
-        )
+def cs_get_device_details(token: str, aids: list[str]) -> list[Dict[str, Any]]:
+    """Bulk-resolve AIDs via /devices/entities/devices/v2"""
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"{CS_BASE_URL}/devices/entities/devices/v2"
+    out: list[Dict[str, Any]] = []
+    CHUNK = 300
+
+    for i in range(0, len(aids), CHUNK):
+        chunk = aids[i:i + CHUNK]
+        r = requests.get(url, headers=headers, params={"ids": chunk})
         r.raise_for_status()
-        all_devices.extend(r.json().get("resources", []))
+        data = r.json()
+        out.extend(data.get("resources", []))
 
-    return all_devices
+    return out
+
 
 ############################################################
-# Upsert into PostgreSQL
+# Postgres upsert helper
 ############################################################
-def upsert_device(cur, d):
 
+def upsert_device(cur, dev: Dict[str, Any]) -> None:
+    """
+    dev keys expected:
+      aid, hostname, domain, serial, platform, os_version,
+      ips (list[str]), macs (list[str]),
+      first_seen, last_seen (ISO8601 or None),
+      raw (dict)
+    """
     cur.execute(
         """
         INSERT INTO asset_inventory.cs_assets_raw (
-            cs_aid, hostname, domain, serial_number_raw,
-            platform_name, os_version,
-            local_ip_addresses, mac_addresses,
-            first_seen, last_seen,
-            raw
+            cs_aid,
+            hostname,
+            domain,
+            serial_number_raw,
+            platform_name,
+            os_version,
+            local_ip_addresses,
+            mac_addresses,
+            first_seen,
+            last_seen,
+            raw,
+            collected_at
         )
         VALUES (
-            %(aid)s, %(hostname)s, %(domain)s, %(serial)s,
-            %(platform)s, %(os_version)s,
-            %(ips)s, %(macs)s,
-            %(first_seen)s, %(last_seen)s,
-            %(raw)s
+            %(aid)s,
+            %(hostname)s,
+            %(domain)s,
+            %(serial)s,
+            %(platform)s,
+            %(os_version)s,
+            %(ips)s,
+            %(macs)s,
+            %(first_seen)s,
+            %(last_seen)s,
+            %(raw)s,
+            NOW()
         )
         ON CONFLICT (cs_aid)
         DO UPDATE SET
-            hostname = EXCLUDED.hostname,
-            domain = EXCLUDED.domain,
+            hostname          = EXCLUDED.hostname,
+            domain            = EXCLUDED.domain,
             serial_number_raw = EXCLUDED.serial_number_raw,
-            platform_name = EXCLUDED.platform_name,
-            os_version = EXCLUDED.os_version,
-            local_ip_addresses = EXCLUDED.local_ip_addresses,
-            mac_addresses = EXCLUDED.mac_addresses,
-            first_seen = EXCLUDED.first_seen,
-            last_seen = EXCLUDED.last_seen,
-            raw = EXCLUDED.raw,
-            collected_at = NOW();
+            platform_name     = EXCLUDED.platform_name,
+            os_version        = EXCLUDED.os_version,
+            local_ip_addresses= EXCLUDED.local_ip_addresses,
+            mac_addresses     = EXCLUDED.mac_addresses,
+            first_seen        = EXCLUDED.first_seen,
+            last_seen         = EXCLUDED.last_seen,
+            raw               = EXCLUDED.raw,
+            collected_at      = NOW();
         """,
-        d
+        dev,
     )
+
 
 ############################################################
 # Main
 ############################################################
 def main():
+    global CS_BASE_URL, CS_CLIENT_ID, CS_CLIENT_SECRET, PG_CONN
+
+    parser = argparse.ArgumentParser(
+        description="Pull CrowdStrike asset inventory into Postgres"
+    )
+    parser.add_argument(
+        "--config",
+        default="config.yaml",
+        help="Path to config.yaml (default: config.yaml)",
+    )
+    args = parser.parse_args()
+
+    cfg = load_config(args.config)
+
+    # Wire up CrowdStrike globals
+    cs_cfg = cfg["crowdstrike"]
+    CS_BASE_URL = cs_cfg.get("base_url", "https://api.us-2.crowdstrike.com").rstrip("/")
+    CS_CLIENT_ID = cs_cfg["client_id"]
+    CS_CLIENT_SECRET = cs_cfg["client_secret"]
+
+    # Build Postgres DSN
+    db = cfg["database"]
+    PG_CONN = (
+        f"host={db['host']} "
+        f"port={db.get('port', 5432)} "
+        f"dbname={db['name']} "
+        f"user={db['user']} "
+        f"password={db['password']}"
+    )
+
     print("[CS] Authenticating...")
     token = cs_auth()
 
     print("[CS] Pulling AID list...")
     aids = cs_get_device_aids(token)
     print(f"[CS] Found {len(aids)} devices")
+
+    if not aids:
+        print("[CS] No devices returned, nothing to do.")
+        return
 
     print("[CS] Fetching full details...")
     devices = cs_get_device_details(token, aids)
@@ -162,8 +219,9 @@ def main():
             "serial": d.get("serial_number"),
             "platform": d.get("platform_name"),
             "os_version": d.get("os_version"),
-            "ips": d.get("local_ip", []),
-            "macs": d.get("mac_address", []),
+            # local_ip and mac_address come back as lists; normalise if needed
+            "ips": d.get("local_ip") or [],
+            "macs": d.get("mac_address") or [],
             "first_seen": d.get("first_seen"),
             "last_seen": d.get("last_seen"),
             "raw": d,
@@ -174,6 +232,7 @@ def main():
     conn.commit()
     conn.close()
     print(f"[CS] Upsert complete. {count} rows written.")
+
 
 if __name__ == "__main__":
     main()
