@@ -175,7 +175,7 @@ def upsert_device(cur, dev: dict) -> None:
             "serial": dev.get("serial"),
             "platform": dev.get("platform"),
             "os_version": dev.get("os_version"),
-            "ips": dev.get("ips") or [],   # CS may return None
+            "ips": dev.get("ips") or [],
             "macs": dev.get("macs") or [],
             "first_seen": dev.get("first_seen"),
             "last_seen": dev.get("last_seen"),
@@ -188,46 +188,12 @@ def upsert_device(cur, dev: dict) -> None:
 # Main
 ############################################################
 def main():
-    global CS_BASE_URL, CS_CLIENT_ID, CS_CLIENT_SECRET, PG_CONN
-
-    parser = argparse.ArgumentParser(
-        description="Pull CrowdStrike asset inventory into Postgres"
-    )
-    parser.add_argument(
-        "--config",
-        default="config.yaml",
-        help="Path to config.yaml (default: config.yaml)",
-    )
-    args = parser.parse_args()
-
-    cfg = load_config(args.config)
-
-    # Wire up CrowdStrike globals
-    cs_cfg = cfg["crowdstrike"]
-    CS_BASE_URL = cs_cfg.get("base_url", "https://api.us-2.crowdstrike.com").rstrip("/")
-    CS_CLIENT_ID = cs_cfg["client_id"]
-    CS_CLIENT_SECRET = cs_cfg["client_secret"]
-
-    # Build Postgres DSN
-    db = cfg["database"]
-    PG_CONN = (
-        f"host={db['host']} "
-        f"port={db.get('port', 5432)} "
-        f"dbname={db['name']} "
-        f"user={db['user']} "
-        f"password={db['password']}"
-    )
-
     print("[CS] Authenticating...")
     token = cs_auth()
 
     print("[CS] Pulling AID list...")
     aids = cs_get_device_aids(token)
     print(f"[CS] Found {len(aids)} devices")
-
-    if not aids:
-        print("[CS] No devices returned, nothing to do.")
-        return
 
     print("[CS] Fetching full details...")
     devices = cs_get_device_details(token, aids)
@@ -238,6 +204,23 @@ def main():
 
     count = 0
     for d in devices:
+        # Normalise IPs and MACs to lists for TEXT[] columns
+        ips_raw = d.get("local_ip")
+        if ips_raw is None:
+            ips = []
+        elif isinstance(ips_raw, list):
+            ips = ips_raw
+        else:
+            ips = [ips_raw]
+
+        macs_raw = d.get("mac_address")
+        if macs_raw is None:
+            macs = []
+        elif isinstance(macs_raw, list):
+            macs = macs_raw
+        else:
+            macs = [macs_raw]
+
         mapped = {
             "aid": d.get("device_id"),
             "hostname": d.get("hostname"),
@@ -245,19 +228,20 @@ def main():
             "serial": d.get("serial_number"),
             "platform": d.get("platform_name"),
             "os_version": d.get("os_version"),
-            # local_ip and mac_address come back as lists; normalise if needed
-            "ips": d.get("local_ip") or [],
-            "macs": d.get("mac_address") or [],
+            "ips": ips,
+            "macs": macs,
             "first_seen": d.get("first_seen"),
             "last_seen": d.get("last_seen"),
             "raw": d,
         }
+
         upsert_device(cur, mapped)
         count += 1
 
     conn.commit()
     conn.close()
     print(f"[CS] Upsert complete. {count} rows written.")
+
 
 
 if __name__ == "__main__":
