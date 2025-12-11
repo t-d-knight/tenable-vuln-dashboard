@@ -86,14 +86,28 @@ def cs_get_device_details(token: str, aids: list[str]) -> list[Dict[str, Any]]:
     headers = {"Authorization": f"Bearer {token}"}
     url = f"{CS_BASE_URL}/devices/entities/devices/v2"
     out: list[Dict[str, Any]] = []
-    CHUNK = 300
+
+    # CrowdStrike API usually limits ids to 100 per request
+    CHUNK = 100
 
     for i in range(0, len(aids), CHUNK):
         chunk = aids[i:i + CHUNK]
-        r = requests.get(url, headers=headers, params={"ids": chunk})
-        r.raise_for_status()
-        data = r.json()
-        out.extend(data.get("resources", []))
+        try:
+            r = requests.get(url, headers=headers, params={"ids": chunk})
+            if r.status_code != 200:
+                # Helpful debug if CS gets salty again
+                print(f"[CS] Error fetching details batch {i//CHUNK + 1}: "
+                      f"status={r.status_code}")
+                try:
+                    print("[CS] Response:", r.json())
+                except Exception:
+                    print("[CS] Raw response:", r.text[:500])
+                r.raise_for_status()
+            data = r.json()
+            out.extend(data.get("resources", []))
+        except requests.HTTPError as e:
+            # Bubble up after logging
+            raise
 
     return out
 
