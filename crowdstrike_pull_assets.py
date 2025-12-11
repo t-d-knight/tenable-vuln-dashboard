@@ -9,14 +9,35 @@ from datetime import datetime
 ############################################################
 # Load Config
 ############################################################
-with open("config.yaml") as f:
-    cfg = yaml.safe_load(f)
+def load_config(path: str = "config.yaml") -> Dict[str, Any]:
+    with open(path, "r") as f:
+        cfg = yaml.safe_load(f) or {}
 
-CS_CLIENT_ID = cfg["crowdstrike"]["client_id"]
-CS_CLIENT_SECRET = cfg["crowdstrike"]["client_secret"]
-CS_BASE_URL = cfg["crowdstrike"]["base_url"]
+    secrets_rel = cfg.get("secrets_file")
+    if secrets_rel:
+        base_dir = os.path.dirname(os.path.abspath(path))
+        secrets_path = os.path.join(base_dir, secrets_rel)
+        if not os.path.isfile(secrets_path):
+            raise FileNotFoundError(f"Secrets file not found: {secrets_path}")
 
-PG_CONN = cfg["database"]["connection"]
+        with open(secrets_path, "r") as sf:
+            secrets = yaml.safe_load(sf) or {}
+
+        if "tenable" in secrets:
+            cfg.setdefault("tenable", {})
+            cfg["tenable"].update(secrets["tenable"])
+
+        if "database" in secrets:
+            cfg.setdefault("database", {})
+            cfg["database"].update(secrets["database"])
+
+        # 🔹 NEW: pull in CrowdStrike creds
+        if "crowdstrike" in secrets:
+            cfg.setdefault("crowdstrike", {})
+            cfg["crowdstrike"].update(secrets["crowdstrike"])
+
+    return cfg
+
 
 ############################################################
 # Authenticate to CrowdStrike

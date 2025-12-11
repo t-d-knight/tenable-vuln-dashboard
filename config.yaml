@@ -2,6 +2,10 @@ tenable:
   base_url: "https://cloud.tenable.com"
   # access_key / secret_key are loaded from secrets.yaml
 
+crowdstrike:
+  base_url: "https://api.us-2.crowdstrike.com"
+  # access_key / secret_key are loaded from secrets.yaml
+
 reporting:
   days_last_seen: 30
   vuln_published_older_than_days: 30
