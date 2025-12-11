@@ -70,7 +70,7 @@ def normalise_hostname(name: Optional[str]) -> Optional[str]:
 # Matching logic
 ############################################################
 
-def upsert_unified_for_pair(cur, norm_hostname: str, cs_aid: str, tn_uuid: str):
+def upsert_unified_for_pair(cur, norm_hostname: str, cs_aid: str, tn_uuid: str) -> int:
     """
     Create or update a unified asset row based on a normalised hostname,
     wiring in the CrowdStrike AID and Tenable UUID.
@@ -80,6 +80,7 @@ def upsert_unified_for_pair(cur, norm_hostname: str, cs_aid: str, tn_uuid: str):
       - canonical_hostname
       - cs_aid, tenable_uuid
       - has_cs, has_tenable, updated_at
+    Returns: unified_assets.id
     """
     cur.execute(
         """
@@ -95,17 +96,18 @@ def upsert_unified_for_pair(cur, norm_hostname: str, cs_aid: str, tn_uuid: str):
         ON CONFLICT (norm_hostname)
         DO UPDATE
         SET
-            cs_aid        = COALESCE(u.cs_aid, EXCLUDED.cs_aid),
-            tenable_uuid  = COALESCE(u.tenable_uuid, EXCLUDED.tenable_uuid),
-            has_cs        = u.has_cs OR EXCLUDED.has_cs,
-            has_tenable   = u.has_tenable OR EXCLUDED.has_tenable,
-            updated_at    = NOW();
+            cs_aid       = COALESCE(u.cs_aid, EXCLUDED.cs_aid),
+            tenable_uuid = COALESCE(u.tenable_uuid, EXCLUDED.tenable_uuid),
+            has_cs       = u.has_cs OR EXCLUDED.has_cs,
+            has_tenable  = u.has_tenable OR EXCLUDED.has_tenable,
+            updated_at   = NOW()
+        RETURNING u.id;
         """,
-        # For now, just use the normalised hostname as the canonical name too.
         (norm_hostname, norm_hostname, cs_aid, tn_uuid),
     )
 
-    unified_id = cur.fetchone()[0]
+    row = cur.fetchone()
+    return row[0]
 
     if cs_aid:
         cur.execute(
