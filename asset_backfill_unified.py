@@ -30,6 +30,21 @@ def load_config(path: str):
 # Backfill CS-only rows
 ############################################################
 SQL_BACKFILL_CS = """
+WITH cs_dedup AS (
+    SELECT DISTINCT ON (lower(trim(hostname)))
+        hostname,
+        lower(trim(hostname)) AS norm_hostname,
+        cs_aid,
+        first_seen,
+        last_seen,
+        platform_name,
+        os_version
+    FROM asset_inventory.cs_assets_raw
+    WHERE hostname IS NOT NULL
+      AND hostname <> ''
+    -- for each norm_hostname, keep the *most recently seen* device
+    ORDER BY lower(trim(hostname)), last_seen DESC
+)
 INSERT INTO asset_inventory.unified_assets (
     canonical_hostname,
     norm_hostname,
@@ -44,31 +59,27 @@ INSERT INTO asset_inventory.unified_assets (
     updated_at
 )
 SELECT
-    c.hostname,
-    lower(trim(c.hostname)) AS norm_hostname,
-    c.cs_aid,
+    hostname,
+    norm_hostname,
+    cs_aid,
     TRUE,
-    c.last_seen,
-    c.first_seen,
-    c.last_seen,
-    c.platform_name,
-    c.os_version,
+    last_seen,
+    first_seen,
+    last_seen,
+    platform_name,
+    os_version,
     NOW(),
     NOW()
-FROM asset_inventory.cs_assets_raw c
-WHERE c.hostname IS NOT NULL
-  AND c.hostname <> ''
+FROM cs_dedup
 ON CONFLICT (norm_hostname)
 DO UPDATE SET
     cs_aid        = EXCLUDED.cs_aid,
     has_cs        = TRUE,
     last_seen_cs  = GREATEST(asset_inventory.unified_assets.last_seen_cs, EXCLUDED.last_seen_cs),
-    -- first_seen_any = earliest of existing vs new
     first_seen_any = LEAST(
         COALESCE(asset_inventory.unified_assets.first_seen_any, EXCLUDED.first_seen_any),
         EXCLUDED.first_seen_any
     ),
-    -- last_seen_any = latest of existing vs new
     last_seen_any = GREATEST(
         COALESCE(asset_inventory.unified_assets.last_seen_any, EXCLUDED.last_seen_any),
         EXCLUDED.last_seen_any
@@ -78,10 +89,22 @@ DO UPDATE SET
     updated_at    = NOW();
 """
 
+
 ############################################################
 # Backfill Tenable-only rows
 ############################################################
 SQL_BACKFILL_TENABLE = """
+WITH tn_dedup AS (
+    SELECT DISTINCT ON (lower(trim(hostname)))
+        hostname,
+        lower(trim(hostname)) AS norm_hostname,
+        tenable_uuid,
+        last_seen
+    FROM asset_inventory.tenable_assets_raw
+    WHERE hostname IS NOT NULL
+      AND hostname <> ''
+    ORDER BY lower(trim(hostname)), last_seen DESC
+)
 INSERT INTO asset_inventory.unified_assets (
     canonical_hostname,
     norm_hostname,
@@ -94,18 +117,16 @@ INSERT INTO asset_inventory.unified_assets (
     updated_at
 )
 SELECT
-    t.hostname,
-    lower(trim(t.hostname)) AS norm_hostname,
-    t.tenable_uuid,
+    hostname,
+    norm_hostname,
+    tenable_uuid,
     TRUE,
-    t.last_seen,
-    t.last_seen,
-    t.last_seen,
+    last_seen,
+    last_seen,
+    last_seen,
     NOW(),
     NOW()
-FROM asset_inventory.tenable_assets_raw t
-WHERE t.hostname IS NOT NULL
-  AND t.hostname <> ''
+FROM tn_dedup
 ON CONFLICT (norm_hostname)
 DO UPDATE SET
     tenable_uuid      = EXCLUDED.tenable_uuid,
@@ -121,7 +142,6 @@ DO UPDATE SET
     ),
     updated_at        = NOW();
 """
-
 
 
 ############################################################
