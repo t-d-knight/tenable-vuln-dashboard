@@ -116,14 +116,14 @@ def cs_get_device_details(token: str, aids: list[str]) -> list[Dict[str, Any]]:
 # Postgres upsert helper
 ############################################################
 
-def upsert_device(cur, dev: Dict[str, Any]) -> None:
+
+def upsert_device(cur, dev: dict) -> None:
     """
-    dev keys expected:
-      aid, hostname, domain, serial, platform, os_version,
-      ips (list[str]), macs (list[str]),
-      first_seen, last_seen (ISO8601 or None),
-      raw (dict)
+    Upsert a single CrowdStrike device into asset_inventory.cs_assets_raw
     """
+    # Wrap the raw dict so psycopg2 knows to send it as JSONB
+    raw_json = psycopg2.extras.Json(dev.get("raw", {}))
+
     cur.execute(
         """
         INSERT INTO asset_inventory.cs_assets_raw (
@@ -154,8 +154,8 @@ def upsert_device(cur, dev: Dict[str, Any]) -> None:
             %(raw)s,
             NOW()
         )
-        ON CONFLICT (cs_aid)
-        DO UPDATE SET
+        ON CONFLICT (cs_aid) DO UPDATE
+        SET
             hostname          = EXCLUDED.hostname,
             domain            = EXCLUDED.domain,
             serial_number_raw = EXCLUDED.serial_number_raw,
@@ -163,12 +163,25 @@ def upsert_device(cur, dev: Dict[str, Any]) -> None:
             os_version        = EXCLUDED.os_version,
             local_ip_addresses= EXCLUDED.local_ip_addresses,
             mac_addresses     = EXCLUDED.mac_addresses,
-            first_seen        = EXCLUDED.first_seen,
-            last_seen         = EXCLUDED.last_seen,
+            -- keep earliest first_seen and latest last_seen
+            first_seen        = LEAST(asset_inventory.cs_assets_raw.first_seen, EXCLUDED.first_seen),
+            last_seen         = GREATEST(asset_inventory.cs_assets_raw.last_seen, EXCLUDED.last_seen),
             raw               = EXCLUDED.raw,
             collected_at      = NOW();
         """,
-        dev,
+        {
+            "aid": dev.get("aid"),
+            "hostname": dev.get("hostname"),
+            "domain": dev.get("domain"),
+            "serial": dev.get("serial"),
+            "platform": dev.get("platform"),
+            "os_version": dev.get("os_version"),
+            "ips": dev.get("ips") or [],   # CS may return None
+            "macs": dev.get("macs") or [],
+            "first_seen": dev.get("first_seen"),
+            "last_seen": dev.get("last_seen"),
+            "raw": raw_json,
+        },
     )
 
 
