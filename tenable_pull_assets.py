@@ -26,7 +26,7 @@ def load_config(path="config.yaml") -> Dict[str, Any]:
 ############################################################
 # Tenable helper
 ############################################################
-def tenable_get_assets(cfg, limit=2000):
+def tenable_get_assets(cfg, page_size=2000):
     headers = {
         "X-ApiKeys": f"accessKey={cfg['tenable']['access_key']};secretKey={cfg['tenable']['secret_key']}"
     }
@@ -34,30 +34,42 @@ def tenable_get_assets(cfg, limit=2000):
     url = f"{cfg['tenable']['base_url']}/assets"
 
     assets = []
-    offset = 0
+    page = 0
 
     while True:
-        params = {"limit": limit, "offset": offset}
+        params = {"page": page, "size": page_size}
         r = requests.get(url, headers=headers, params=params)
         r.raise_for_status()
         data = r.json()
 
         chunk = data.get("assets", [])
         if not chunk:
+            print(f"[TN] page={page}, got 0 assets – stopping.")
             break
 
         assets.extend(chunk)
+        print(f"[TN] page={page}, got {len(chunk)} assets")
 
-        print(f"[TN] offset={offset}, got {len(chunk)} assets")
+        # Use Tenable's pagination info if present
+        pagination = data.get("pagination", {})
+        total = pagination.get("total")
+        # If there's an explicit 'next' flag/field, you can also do:
+        # has_next = pagination.get("next") is not None
 
-        if len(chunk) < limit:
+        # Stop if we've consumed all known assets
+        if total is not None and (page + 1) * page_size >= total:
+            print(f"[TN] Reached total={total}, stopping at page={page}.")
             break
 
-        offset += limit
+        # Defensive: if we ever get fewer than a full page, that also means "last page"
+        if len(chunk) < page_size:
+            print(f"[TN] Last partial page at page={page}, stopping.")
+            break
+
+        page += 1
 
     print(f"[TN] Total assets collected: {len(assets)}")
     return assets
-
 
 ############################################################
 # Upsert Tenable assets
