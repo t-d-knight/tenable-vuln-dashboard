@@ -63,23 +63,52 @@ def cs_auth() -> str:
     return r.json()["access_token"]
 
 
-def cs_get_device_aids(token: str) -> list[str]:
-    """Example: pull all AIDs from /devices/queries/devices/v1"""
-    headers = {"Authorization": f"Bearer {token}"}
-    aids: list[str] = []
+def cs_get_device_aids(token, batch_size=500, max_devices=None):
+    """
+    Pull all device AIDs from CrowdStrike with pagination.
+    """
     url = f"{CS_BASE_URL}/devices/queries/devices/v1"
-    params = {"limit": 500}
+    headers = {"Authorization": f"Bearer {token}"}
+
+    aids = []
+    offset = 0
+
     while True:
+        params = {
+            "limit": batch_size,
+            "offset": offset,
+        }
+        # Optionally you can add filters here later, e.g.:
+        # params["filter"] = "platform_name:'Windows'"
+
         r = requests.get(url, headers=headers, params=params)
         r.raise_for_status()
         data = r.json()
-        aids.extend(data.get("resources", []))
-        next_token = data.get("meta", {}).get("pagination", {}).get("after")
-        if not next_token:
-            break
-        params["after"] = next_token
-    return aids
 
+        page = data.get("resources", []) or []
+        total = data.get("meta", {}).get("pagination", {}).get("total")
+
+        print(f"[CS] Page offset={offset}, got {len(page)} AIDs (total={total})")
+
+        if not page:
+            break
+
+        aids.extend(page)
+
+        # Safety cap if you ever want it:
+        if max_devices and len(aids) >= max_devices:
+            print(f"[CS] Reached max_devices={max_devices}, stopping.")
+            break
+
+        # Move to next page
+        offset += batch_size
+
+        # If we’ve reached or exceeded total, bail out
+        if total is not None and offset >= total:
+            break
+
+    print(f"[CS] Total AIDs collected: {len(aids)}")
+    return aids
 
 def cs_get_device_details(token: str, aids: list[str]) -> list[Dict[str, Any]]:
     """Bulk-resolve AIDs via /devices/entities/devices/v2"""
@@ -238,7 +267,6 @@ def main():
 
     count = 0
     for d in devices:
-        # Normalise IPs and MACs to lists for TEXT[] columns
         ips_raw = d.get("local_ip")
         if ips_raw is None:
             ips = []
@@ -268,7 +296,6 @@ def main():
             "last_seen": d.get("last_seen"),
             "raw": d,
         }
-
         upsert_device(cur, mapped)
         count += 1
 
