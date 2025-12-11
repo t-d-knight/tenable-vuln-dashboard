@@ -188,12 +188,46 @@ def upsert_device(cur, dev: dict) -> None:
 # Main
 ############################################################
 def main():
+    global CS_BASE_URL, CS_CLIENT_ID, CS_CLIENT_SECRET, PG_CONN
+
+    parser = argparse.ArgumentParser(
+        description="Pull CrowdStrike asset inventory into Postgres"
+    )
+    parser.add_argument(
+        "--config",
+        default="config.yaml",
+        help="Path to config.yaml (default: config.yaml)",
+    )
+    args = parser.parse_args()
+
+    cfg = load_config(args.config)
+
+    # Wire up CrowdStrike globals
+    cs_cfg = cfg["crowdstrike"]
+    CS_BASE_URL = cs_cfg.get("base_url", "https://api.us-2.crowdstrike.com").rstrip("/")
+    CS_CLIENT_ID = cs_cfg["client_id"]
+    CS_CLIENT_SECRET = cs_cfg["client_secret"]
+
+    # Build Postgres DSN
+    db = cfg["database"]
+    PG_CONN = (
+        f"host={db['host']} "
+        f"port={db.get('port', 5432)} "
+        f"dbname={db['name']} "
+        f"user={db['user']} "
+        f"password={db['password']}"
+    )
+    
     print("[CS] Authenticating...")
     token = cs_auth()
 
     print("[CS] Pulling AID list...")
     aids = cs_get_device_aids(token)
     print(f"[CS] Found {len(aids)} devices")
+
+    if not aids:
+        print("[CS] No devices returned, nothing to do.")
+        return
 
     print("[CS] Fetching full details...")
     devices = cs_get_device_details(token, aids)
