@@ -13,7 +13,7 @@ python3 crowdstrike_pull_assets.py --config config.yaml
 python3 tenable_pull_assets.py --config config.yaml
 
 # Asset Backfill
-python3 asset_backfill_unified.py --config config.yaml
+# python3 asset_backfill_unified.py --config config.yaml
 
 # Match Assets
 python3 asset_match_hostname.py
