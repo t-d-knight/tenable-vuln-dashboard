@@ -207,11 +207,15 @@ rules:
       - "cisco:wireless_lan_controller_software"
       - "cisco - unsupported cisco operating system"
 
-  - name: "Cisco Collaboration (Webex / Jabber / TelePresence)"
+  - name: "Cisco Webex / Jabber"
     match: "contains_any"
     patterns:
       - "cisco:jabber"
       - "cisco:webex"
+
+  - name: "Cisco TelePresence"
+    match: "contains_any"
+    patterns:
       - "cisco:telepresence"
 
   - name: "Fortinet FortiClient"
