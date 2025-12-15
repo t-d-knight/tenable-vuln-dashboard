@@ -352,11 +352,14 @@ rules:
   ########################################################
   # MICROSOFT .NET / DATA / SYSINTERNALS
   ########################################################
-  - family: "Microsoft .NET / ASP.NET"
+  - family: "Microsoft .NET Framework"
+    match_any:
+        - "microsoft:.net_framework"
+
+  - family: "Microsoft .NET Core / ASP.NET"
     match_any:
       - "microsoft:.net_core"
       - "microsoft:asp.net_core"
-      - "microsoft:.net_framework"
       - "microsoft:asp.net"
 
   - family: "Microsoft SQL / Data Tools"
