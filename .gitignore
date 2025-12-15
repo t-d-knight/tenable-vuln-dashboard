@@ -1,2 +1,7 @@
 secrets.yaml
 *.sqlite
+*.log
+data
+plugin_dump.json
+__pycache__
+venv
