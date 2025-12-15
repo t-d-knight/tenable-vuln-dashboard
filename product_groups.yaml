@@ -225,10 +225,14 @@ rules:
   ########################################################
   # REMOTE ACCESS / SSH / FILE TRANSFER
   ########################################################
-  - name: "Remote Support / Remote Admin"
+  - name: "Dameware Mini"
     match: "contains_any"
     patterns:
       - "dameware"
+
+  - name: "Remote Support / Remote Admin"
+    match: "contains_any"
+    patterns:
       - "teamviewer"
       - "ultravnc"
       - "devolutions remote desktop"
@@ -249,12 +253,16 @@ rules:
       - "filezilla"
       - "winrar"
 
+  - name: "FortiClient VPN"
+    match: "contains_any"
+    patterns:
+      - "forticlient"
+
   - name: "VPN Clients"
     match: "contains_any"
     patterns:
       - "openvpn"
       - "globalprotect"
-      - "forticlient"
 
   ########################################################
   # DATABASES
@@ -290,7 +298,7 @@ rules:
   ########################################################
   # NETWORK / INFRASTRUCTURE WEAKNESSES
   ########################################################
-  - name: "Network Protocol / Infrastructure Issues"
+  - name: "Network Protocol / Infra"
     match: "contains_any"
     patterns:
       - "dns -"
@@ -391,12 +399,15 @@ rules:
       - "microsoft:office_compatibility_pack"
       - "microsoft:office_web_apps"
       - "microsoft:office_online_server"
+
+  - family: "Microsoft Sharepoint"
+    match_any:
       - "microsoft:sharepoint_server"
 
   ########################################################
   # VMWARE PLATFORM
   ########################################################
-  - family: "VMware vSphere / ESXi / Tools"
+  - family: "VMware ESXi / Tools"
     match_any:
       - "vmware:tools"
       - "vmware:esxi"
@@ -409,7 +420,7 @@ rules:
   ########################################################
   # DELL SUPPORTASSIST / OS RECOVERY
   ########################################################
-  - family: "Dell SupportAssist / OS Recovery"
+  - family: "Dell SupportAssist"
     match_any:
       - "dell:supportassist"
       - "dell supportassist os recovery information disclosure"
@@ -432,13 +443,17 @@ rules:
   ########################################################
   # ENDPOINT SECURITY (AV / EDR)
   ########################################################
-  - family: "Endpoint Security (AV / EDR)"
+  - family: "CrowdStrike Falcon"
+    match_any:
+         - "crowdstrike falcon sensor"
+
+
+  - family: "Untrusted Endpoint Security"
     match_any:
       - "symantec:endpoint_protection"
       - "symantec:sonar"
       - "sophos:sophos_anti-virus"
       - "sophos:intercept_x_endpoint-virus"
-      - "crowdstrike falcon sensor"
 
   ########################################################
   # VULNERABILITY / MGMT AGENTS
@@ -450,10 +465,16 @@ rules:
   ########################################################
   # UTILITIES – ARCHIVE / EDITORS / NETWORK TOOLS
   ########################################################
-  - family: "Utilities - Archive / Editors"
+  - family: "7-zip"
     match_any:
       - "7-zip:7-zip"
+
+  - family: "Notepad++"
+    match_any:
       - "notepad-plus-plus:notepad"
+
+  - family: "Utilities - Archive / Editors"
+    match_any:
       - "rarlab:winrar"
 
   - family: "Network Tools - Wireshark"
@@ -509,7 +530,7 @@ rules:
   ########################################################
   # WINDOWS CONFIG / HARDENING
   ########################################################
-  - family: "Windows Configuration / Hardening Findings"
+  - family: "Windows Configuration / Hardening"
     match_any:
       - "windows - microsoft windows unquoted service path enumeration"
       - "windows - microsoft windows smb registry"
