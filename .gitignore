@@ -4,4 +4,4 @@ secrets.yaml
 data
 plugin_dump.json
 __pycache__
-venv
+venv  
