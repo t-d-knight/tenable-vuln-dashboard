@@ -6,7 +6,7 @@ source venv/bin/activate
 python3 tenable_trend_collector.py --config config.yaml
 
 # New product driver metrics (90-day window)
-python3 tenable_product_drivers.py --config config.yaml --window-days 90 --dump-plugin-enrichment
+python3 tenable_product_drivers.py --config config.yaml --window-days 90 
 
 # Asset Collection
 python3 crowdstrike_pull_assets.py --config config.yaml
