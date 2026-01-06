@@ -22,6 +22,7 @@ except ImportError:
 # CONFIG
 # ============================================================
 
+
 def load_config(path: str = "config.yaml") -> Dict[str, Any]:
     with open(path, "r") as f:
         cfg = yaml.safe_load(f) or {}
@@ -42,9 +43,16 @@ def load_config(path: str = "config.yaml") -> Dict[str, Any]:
 # PRODUCT CLASSIFICATION
 # ============================================================
 
+
 def load_product_rules(path: str = "product_groups.yaml") -> Dict[str, Any]:
     if not os.path.isfile(path):
-        return {"rules": [], "defaults": {"unknown_family_name": "Other / Misc", "vendor_from_prefix": True}}
+        return {
+            "rules": [],
+            "defaults": {
+                "unknown_family_name": "Other / Misc",
+                "vendor_from_prefix": True,
+            },
+        }
     with open(path, "r") as f:
         data = yaml.safe_load(f) or {}
     data.setdefault("rules", [])
@@ -92,6 +100,7 @@ def classify_product(product_key: str) -> Dict[str, str]:
 # ============================================================
 # POSTGRES
 # ============================================================
+
 
 def pg_connect(cfg):
     if psycopg2 is None:
@@ -163,13 +172,16 @@ def init_db(cfg):
 # TENABLE HELPERS
 # ============================================================
 
+
 def tenable_session(base_url, access_key, secret_key):
     s = requests.Session()
     s.base_url = base_url.rstrip("/")
-    s.headers.update({
-        "X-ApiKeys": f"accessKey={access_key};secretKey={secret_key}",
-        "Accept": "application/json",
-    })
+    s.headers.update(
+        {
+            "X-ApiKeys": f"accessKey={access_key};secretKey={secret_key}",
+            "Accept": "application/json",
+        }
+    )
     return s
 
 
@@ -198,6 +210,7 @@ def iter_chunks(sess, uuid, chunks):
 # ============================================================
 # COLLECTION
 # ============================================================
+
 
 def extract_plugin_id(plugin) -> Optional[int]:
     try:
@@ -240,25 +253,28 @@ def collect_product_metrics(sess, cfg, window_days):
         product = product_key_from_cpe(plugin)
         cls = classify_product(product)
 
-        plugin_meta.setdefault(pid, {
-            "plugin_id": pid,
-            "plugin_name": plugin.get("name"),
-            "plugin_family": plugin.get("family"),
-            "plugin_type": plugin.get("type"),
-            "vendor": cls["vendor"],
-            "product": product,
-            "product_family": cls["family"],
-            "synopsis": plugin.get("synopsis"),
-            "description": plugin.get("description"),
-            "solution": plugin.get("solution"),
-            "see_also": plugin.get("see_also"),
-            "cvss3_base": plugin.get("cvss3_base_score"),
-            "cvss3_vector": plugin.get("cvss3_vector"),
-            "exploit_available": plugin.get("exploit_available"),
-            "exploited_by_malware": plugin.get("exploited_by_malware"),
-            "has_patch": bool(plugin.get("patch_publication_date")),
-            "patch_published": plugin.get("patch_publication_date"),
-        })
+        plugin_meta.setdefault(
+            pid,
+            {
+                "plugin_id": pid,
+                "plugin_name": plugin.get("name"),
+                "plugin_family": plugin.get("family"),
+                "plugin_type": plugin.get("type"),
+                "vendor": cls["vendor"],
+                "product": product,
+                "product_family": cls["family"],
+                "synopsis": plugin.get("synopsis"),
+                "description": plugin.get("description"),
+                "solution": plugin.get("solution"),
+                "see_also": plugin.get("see_also"),
+                "cvss3_base": plugin.get("cvss3_base_score"),
+                "cvss3_vector": plugin.get("cvss3_vector"),
+                "exploit_available": plugin.get("exploit_available"),
+                "exploited_by_malware": plugin.get("exploited_by_malware"),
+                "has_patch": bool(plugin.get("patch_publication_date")),
+                "patch_published": plugin.get("patch_publication_date"),
+            },
+        )
 
         for cve in extract_cves(plugin):
             plugin_cves.setdefault(pid, set()).add(cve)
@@ -269,6 +285,7 @@ def collect_product_metrics(sess, cfg, window_days):
 # ============================================================
 # DB WRITE
 # ============================================================
+
 
 def _as_jsonb(value):
     """
@@ -348,14 +365,31 @@ def write_plugin_enrichment(cfg, plugin_meta, plugin_cves):
         patch_published = EXCLUDED.patch_published;
     """
 
-    for k, v in p2.items():
-    	if isinstance(v, dict):
-            print("DICT FIELD:", k, list(v)[:10])
+    def adapt_value(v):
+        # Convert dict/list to JSON for json/jsonb columns (or just to be safe)
+        if v is None:
+            return None
+        if Json is not None and isinstance(v, (dict, list)):
+            return Json(v)
+        return v
 
     for p in plugin_meta.values():
-        p2 = dict(p)
-        p2["see_also"] = _as_jsonb(p2.get("see_also"))
-        cur.execute(upsert_sql, p2)
+        p2 = {k: adapt_value(v) for k, v in p.items()}
+
+        # Optional: if you want to SEE what fields are dict/list BEFORE wrapping, uncomment:
+        # for k, v in p.items():
+        #     if isinstance(v, dict):
+        #         print(f"[DICT] plugin_id={p.get('plugin_id')} field={k} keys={list(v)[:10]}")
+        #     if isinstance(v, list):
+        #         print(f"[LIST] plugin_id={p.get('plugin_id')} field={k} len={len(v)}")
+
+        try:
+            cur.execute(upsert_sql, p2)
+        except Exception as e:
+            # Helpful crash context
+            print(f"[!] Failed upsert for plugin_id={p.get('plugin_id')}: {e}")
+            print("[!] Param types:", {k: type(v).__name__ for k, v in p.items()})
+            raise
 
     for pid, cves in plugin_cves.items():
         for cve in cves:
@@ -367,10 +401,10 @@ def write_plugin_enrichment(cfg, plugin_meta, plugin_cves):
     conn.commit()
     conn.close()
 
-
 # ============================================================
 # MAIN
 # ============================================================
+
 
 def main():
     parser = argparse.ArgumentParser()
