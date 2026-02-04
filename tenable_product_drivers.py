@@ -365,13 +365,19 @@ def write_plugin_enrichment(cfg, plugin_meta, plugin_cves):
         patch_published = EXCLUDED.patch_published;
     """
 
+    import json
+
     def adapt_value(v):
-        # Convert dict/list to JSON for json/jsonb columns (or just to be safe)
         if v is None:
             return None
-        if Json is not None and isinstance(v, (dict, list)):
-            return Json(v)
+        if isinstance(v, (dict, list)):
+            # Best: use psycopg2 Json wrapper when available
+            if Json is not None:
+                return Json(v)
+            # Fallback: plain JSON string
+            return json.dumps(v, default=str)
         return v
+
 
     for p in plugin_meta.values():
         p2 = {k: adapt_value(v) for k, v in p.items()}
