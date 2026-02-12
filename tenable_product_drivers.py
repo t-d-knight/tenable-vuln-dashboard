@@ -69,10 +69,23 @@ def classify_product(product_key: str) -> Dict[str, str]:
     pk = (product_key or "").lower()
     family = None
 
-    for r in PRODUCT_RULES["rules"]:
+    for r in PRODUCT_RULES.get("rules", []):
         label = r.get("family") or r.get("name")
         if not label:
             continue
+
+        # --- New: legacy "match_any" support (exact/startswith/contains fallback) ---
+        legacy = r.get("match_any")
+        if isinstance(legacy, list) and legacy:
+            for cand in legacy:
+                c = (cand or "").lower()
+                if not c:
+                    continue
+                if pk == c or pk.startswith(c) or c in pk:
+                    family = label
+                    break
+            if family:
+                break
 
         match = r.get("match")
         pat = r.get("pattern")
@@ -82,9 +95,13 @@ def classify_product(product_key: str) -> Dict[str, str]:
             family = label
         elif match == "startswith" and pat and pk.startswith(pat.lower()):
             family = label
-        elif match == "regex" and pat and re.search(pat, product_key or ""):
+        elif match == "regex" and pat and re.search(pat, product_key or "", flags=re.I):
             family = label
-        elif match == "contains_any" and any(p.lower() in pk for p in pats):
+        elif match == "contains_any" and any((p or "").lower() in pk for p in pats):
+            family = label
+
+        # --- New: startswith_any support ---
+        elif match == "startswith_any" and pats and any(pk.startswith((p or "").lower()) for p in pats):
             family = label
 
         if family:
@@ -95,7 +112,6 @@ def classify_product(product_key: str) -> Dict[str, str]:
 
     vendor = product_key.split(":", 1)[0] if ":" in product_key else "unknown_vendor"
     return {"vendor": vendor, "family": family}
-
 
 # ============================================================
 # POSTGRES
