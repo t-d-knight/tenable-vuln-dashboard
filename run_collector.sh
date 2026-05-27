@@ -29,4 +29,4 @@ python3 crowdstrike_pull_assets.py --config config.yaml
 python3 tenable_pull_assets.py --config config.yaml
 
 # Cross-source asset matching
-python3 asset_match_hostname.py
+python3 asset_match_hostname.py --config config.yaml
