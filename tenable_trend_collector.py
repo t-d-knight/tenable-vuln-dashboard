@@ -247,7 +247,6 @@ def start_export(sess: requests.Session, filters: Dict[str, Any]) -> str:
         "filters": filters,
         "include_unlicensed": True,
     }
-    print("[debug] Export payload:", json.dumps(payload, indent=2))
     resp = sess.post(f"{sess.base_url}/vulns/export", data=json.dumps(payload))
     if resp.status_code != 200:
         raise RuntimeError(f"Export start failed: {resp.status_code}, {resp.text}")
@@ -257,7 +256,7 @@ def start_export(sess: requests.Session, filters: Dict[str, Any]) -> str:
     if not export_uuid:
         raise RuntimeError(f"Export UUID missing: {data}")
 
-    print(f"[debug] Export started: {export_uuid}")
+    print(f"[+] Export started: {export_uuid}")
     return export_uuid
 
 
@@ -288,7 +287,6 @@ def poll_export(sess: requests.Session, uuid: str, interval: int = 10) -> Dict[s
 
 def iter_chunks(sess: requests.Session, uuid: str, chunks) -> Iterable[Dict[str, Any]]:
     for chunk in chunks:
-        print(f"[debug] Fetching chunk {chunk}…")
         resp = sess.get(f"{sess.base_url}/vulns/export/{uuid}/chunks/{chunk}")
         resp.raise_for_status()
         data = resp.json()
@@ -554,7 +552,6 @@ def fetch_all_assets(sess: requests.Session) -> Dict[str, Any]:
     asset_tags: Dict[str, Any] = {}
 
     for c in chunks:
-        print(f"[debug] Fetching asset chunk {c}")
         chunk = sess.get(f"{sess.base_url}/assets/export/{uuid}/chunks/{c}").json()
         for a in chunk:
             aid = a.get("id") or a.get("uuid")
@@ -649,7 +646,7 @@ def site_label(asset: Dict[str, Any], site_cfg, tag_cfg, ungrouped: str) -> str:
 #   MAIN COLLECTION LOGIC
 # ------------------------------------------------------------
 
-def collect(sess, cfg):
+def collect(sess, cfg, debug: bool = False):
     total_seen = 0
     total_with_sev = 0
     remote_counter = 0
@@ -697,7 +694,7 @@ def collect(sess, cfg):
 
     for f in iter_chunks(sess, uuid, chunks):
         # Dump a few plugins so we can sanity-check CVSS / vectors
-        if total_seen < 20:
+        if debug and total_seen < 20:
             print("\n[DEBUG PLUGIN DATA]")
             print(json.dumps(f.get("plugin", {}), indent=2))
 
@@ -732,7 +729,7 @@ def collect(sess, cfg):
         if remote:
             remote_counter += 1
             # Optional: show first few remote examples
-            if remote_counter <= 5:
+            if debug and remote_counter <= 5:
                 plugin = f.get("plugin", {})
                 print("[debug] remote/no-auth example:",
                       plugin.get("id"),
@@ -772,11 +769,17 @@ def collect(sess, cfg):
             if breach:
                 bucket["remote_breaches"] += 1
 
-    print(
-        f"[debug] Findings processed: {total_seen}, "
-        f"with recognised severity: {total_with_sev}, "
-        f"remote_no_auth_matches: {remote_counter}"
-    )
+    if debug:
+        print(
+            f"[debug] Findings processed: {total_seen}, "
+            f"with recognised severity: {total_with_sev}, "
+            f"remote_no_auth_matches: {remote_counter}"
+        )
+    else:
+        print(
+            f"[+] Findings processed: {total_seen} "
+            f"(classified: {total_with_sev}, remote/no-auth: {remote_counter})"
+        )
 
     return overall, sla, site_cfg, ungrouped
 
@@ -787,6 +790,11 @@ def collect(sess, cfg):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="config.yaml")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print raw plugin data and remote/no-auth examples for troubleshooting",
+    )
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -806,7 +814,7 @@ def main():
     date = dt.date.today().isoformat()
     print(f"[+] Beginning snapshot for {date}")
 
-    overall, sla_data, site_cfg, ungrouped = collect(sess, cfg)
+    overall, sla_data, site_cfg, ungrouped = collect(sess, cfg, debug=args.debug)
     label_to_tag = {v: k for k, v in site_cfg.items()}
 
     # Console summary

@@ -1,6 +1,6 @@
 # Tenable Vulnerability Trend Collector
 
-A Python-based collector that pulls filtered vulnerability data from **Tenable Vulnerability Management (Tenable.io)** via the **Exports API**, enriches it with **asset tags**, classifies by **site**, **severity**, and **remote exploitability**, and stores daily metrics in a database for long-term trending and BI dashboards (Power BI / Grafana).
+A Python-based collector that pulls filtered vulnerability data from **Tenable Vulnerability Management (Tenable.io)** via the Exports API, enriches it with **asset tags**, classifies by **site**, **severity**, and **remote exploitability**, and stores daily metrics in PostgreSQL for long-term trending and BI dashboards (Power BI / Grafana).
 
 Designed to replace manual CSV exports, pivot-table hell, and one-off reporting.
 
@@ -13,10 +13,7 @@ Designed to replace manual CSV exports, pivot-table hell, and one-off reporting.
 - **Severity breakdown**: Critical / High / Medium / Low.
 - **Remote/no-auth exploitability detection** using CVSS vectors (network, low complexity, no privileges).
 - **SLA metrics** per site and risk band (total vs breaches, including remote).
-- **Database-backed snapshots**:
-  - SQLite (simple/testing)
-  - PostgreSQL (recommended for production + Power BI).
-- **BI-friendly schema**: daily snapshots for easy trend charts and KPIs.
+- **PostgreSQL-backed snapshots** with daily snapshots for easy trend charts and KPIs.
 
 ---
 
@@ -49,13 +46,7 @@ source venv/bin/activate
 Install Python dependencies:
 
 ```bash
-pip install requests pyyaml
-```
-
-If using PostgreSQL (recommended):
-
-```bash
-pip install psycopg2-binary
+pip install requests pyyaml psycopg2-binary
 ```
 
 ---
@@ -71,30 +62,51 @@ You will need:
   - Read **vulnerabilities**
   - Read **assets** (including tags)
 
-These values go into `config.yaml`.
+These values go into `secrets.yaml` (see Section 4).
 
 ---
 
-## 4. Configuration (`config.yaml`)
+## 4. Configuration
 
-The collector uses a YAML configuration file for:
+### 4.1 Secrets (`secrets.yaml`)
 
-- Tenable API credentials
-- Filters (last seen, published age, exploitability behaviour)
-- Site mapping (tag value → human label)
-- Tag categories (for sites / asset types)
-- Database connection settings
+Copy the example file and fill in your values:
 
-### 4.1 Example config (current working setup)
+```bash
+cp secrets.yaml.example secrets.yaml
+```
+
+`secrets.yaml` is listed in `.gitignore` and should never be committed.
 
 ```yaml
 tenable:
   access_key: "YOUR_TENABLE_ACCESS_KEY"
   secret_key: "YOUR_TENABLE_SECRET_KEY"
 
+database:
+  user: "tenable_trends_user"
+  password: "ChangeMe123!"
+```
+
+### 4.2 Main config (`config.yaml`)
+
+The collector uses `config.yaml` for everything non-secret:
+
+- Tenable API base URL
+- Filters (last seen, published age, exploitability behaviour)
+- Site mapping (tag value → human label)
+- Tag categories (for sites / asset types)
+- Database connection settings (credentials come from `secrets.yaml`)
+
+```yaml
+tenable:
+  base_url: "https://cloud.tenable.com"
+
 reporting:
   days_last_seen: 30
   vuln_published_older_than_days: 30
+  # true  = only flag remote/no-auth vulns that also have a known exploit (recommended)
+  # false = flag all network-accessible, no-auth vulns regardless of exploit availability
   require_exploit_for_remote_no_auth: true
   retention_days: 540
 
@@ -103,32 +115,7 @@ sites:
     label: "BDH"
   - key: "BH-Site"
     label: "BH"
-  - key: "HH-Site"
-    label: "HH"
-  - key: "DH-Site"
-    label: "DH"
-  - key: "CDH-Site"
-    label: "CDH"
-  - key: "ERH-Site"
-    label: "ERH"
-  - key: "MDHS-Site"
-    label: "MDHS"
-  - key: "IDHS-Site"
-    label: "IDHS"
-  - key: "MBPH-Site"
-    label: "MBPH"
-  - key: "KDH-Site"
-    label: "KDH"
-  - key: "SHDH-Site"
-    label: "SHDH"
-  - key: "REDHS-Site"
-    label: "REDHS"
-  - key: "RDHS-Site"
-    label: "RDHS"
-  - key: "MTHCS-Site"
-    label: "MTHCS"
-  - key: "LMHA-Site"
-    label: "LMHA"
+  # Add your own site tag keys and labels here
 
 ungrouped_label: "Ungrouped"
 
@@ -140,25 +127,29 @@ tags:
   workstation_values: ["Workstation"]
 
 database:
-  engine: "sqlite"
-  db_path: "tenable_trends.sqlite"
+  engine: "postgres"
+  host: "127.0.0.1"
+  port: 5432
+  name: "tenable_trends"
+
+secrets_file: "secrets.yaml"
 ```
 
 ---
 
 ## 5. Tenable Filters / Logic
 
-Matches your UI filter:
+Targets active vulnerabilities matching:
 
-Active, Resurfaced, New → Severity High/Critical → Last Seen ≤ X days → Published > X days
+- State: `OPEN` or `REOPENED`
+- Severity: Critical / High / Medium / Low
+- Last seen within `days_last_seen`
 
-Exports API filters:
+Remote/no-auth classification uses CVSS vectors (v2, v3, and v4 all supported):
 
-- state: ["OPEN", "REOPENED"]
-- severity: ["high", "critical"]
-- last_found: <epoch>
-
-plugin_published logic optional.
+- Attack Vector: Network or Adjacent
+- Privileges Required: None
+- (Optional) Known exploit required — controlled by `require_exploit_for_remote_no_auth`
 
 ---
 
@@ -166,75 +157,68 @@ plugin_published logic optional.
 
 ### Severity
 
-- critical
-- high
-- medium
-- low
+Severity is determined first from CVSS base score, with Tenable's own severity as fallback:
 
-### Remote / No-Auth Logic
+| Score     | Band     |
+|-----------|----------|
+| ≥ 9.0     | Critical |
+| 7.0–8.9   | High     |
+| 4.0–6.9   | Medium   |
+| < 4.0     | Low      |
 
-- Attack Vector: Network
-- Complexity: Low
-- Privileges: None
-- (Optional) exploit required
+### SLA Thresholds
 
-### SLA Metrics
+| Band     | SLA (days) |
+|----------|------------|
+| Critical | 2          |
+| High     | 14         |
+| Medium   | 30         |
+| Low      | 60         |
 
-Tracked per site:
-
-- total
-- breaches
-- remote_total
-- remote_breaches
+SLA age is measured from `first_found`. A finding is a breach if its age exceeds the band threshold.
 
 ---
 
 ## 7. Database Schema
 
-### daily_site_metrics
+### `daily_site_metrics`
 
-- snapshot_date
-- site_label
-- crit
-- high
-- medium
-- low
-- remote_crit
-- remote_high
-- assets
-- total
+Daily severity counts per site.
 
-### daily_sla_metrics
+| Column        | Type    |
+|---------------|---------|
+| snapshot_date | TEXT    |
+| site_label    | TEXT    |
+| site_tag      | TEXT    |
+| crit          | INTEGER |
+| high          | INTEGER |
+| medium        | INTEGER |
+| low           | INTEGER |
+| total         | INTEGER |
+| remote_crit   | INTEGER |
+| remote_high   | INTEGER |
+| assets        | INTEGER |
 
-- snapshot_date
-- site_label
-- risk
-- total
-- breaches
-- remote_total
-- remote_breaches
+### `daily_sla_metrics`
 
----
+SLA tracking per site and risk band.
 
-## 8. Running the Collector
+| Column                 | Type    |
+|------------------------|---------|
+| snapshot_date          | TEXT    |
+| site_label             | TEXT    |
+| site_tag               | TEXT    |
+| risk                   | TEXT    |
+| total_vulns            | INTEGER |
+| sla_breaches           | INTEGER |
+| remote_no_auth_vulns   | INTEGER |
+| remote_no_auth_breaches| INTEGER |
 
-```bash
-cd /root/tenable-tracker
-source venv/bin/activate
-python3 tenable_trend_collector.py
-```
-
----
-
-## 9. Cron Automation
-
-```bash
-0 2 * * * cd /root/tenable-tracker && /root/tenable-tracker/venv/bin/python3 tenable_trend_collector.py >> /root/tenable-tracker/collector.log 2>&1
-```
+Tables are created automatically on first run.
 
 ---
 
-## 10. PostgreSQL Setup
+## 8. PostgreSQL Setup
 
 ```bash
 sudo dnf install postgresql-server postgresql-contrib
@@ -242,7 +226,7 @@ sudo postgresql-setup --initdb
 sudo systemctl enable --now postgresql
 ```
 
-## Create DB + User
+Create DB and user:
 
 ```sql
 sudo -u postgres psql
@@ -252,16 +236,34 @@ GRANT ALL PRIVILEGES ON DATABASE tenable_trends TO tenable_trends_user;
 \q
 ```
 
-Update config:
+Update the `database` section of `config.yaml` and `secrets.yaml` accordingly.
 
-```yaml
-database:
-  engine: "postgres"
-  host: "127.0.0.1"
-  port: 5432
-  name: "tenable_trends"
-  user: "tenable_trends_user"
-  password: "ChangeMe123!"
+---
+
+## 9. Running the Collector
+
+```bash
+cd /root/tenable-tracker
+source venv/bin/activate
+python3 tenable_trend_collector.py
+```
+
+**Expected runtime:** On a large Tenable tenant (50k+ assets, 500k+ findings), a full run typically takes 10–30 minutes. The majority of that time is waiting for the Tenable export jobs to complete on their end — the polling loop is normal. `run_collector.sh` chains several scripts, each triggering its own Tenable export, so total wall time can be 30–60 minutes on large environments.
+
+### Troubleshooting
+
+Add `--debug` to dump raw plugin payloads and remote/no-auth classification examples to stdout:
+
+```bash
+python3 tenable_trend_collector.py --debug
+```
+
+---
+
+## 10. Cron Automation
+
+```bash
+0 2 * * * cd /root/tenable-tracker && /root/tenable-tracker/venv/bin/python3 run_collector.sh >> /root/tenable-tracker/logs/collector.log 2>&1
 ```
 
 ---
@@ -271,15 +273,32 @@ database:
 1. Open Power BI Desktop
 2. Get Data → PostgreSQL database
 3. Server: your VM IP
-4. Database: tenable_trends
-5. Select daily_site_metrics + daily_sla_metrics
+4. Database: `tenable_trends`
+5. Select `daily_site_metrics` and `daily_sla_metrics`
 
 ---
 
-## 12. Hit-By-A-Bus Notes
+## 12. Maintenance
 
-- config.yaml contains all keys and mapping rules
-- Script auto-creates DB tables
-- Cron automates daily ingestion
-- Power BI reads directly from DB
-- Dependencies: Python, requests, YAML, PostgreSQL (optional)
+`maintenance.sh` handles DB pruning, product reclassification, VACUUM, and log rotation. Run it weekly via cron:
+
+```bash
+0 3 * * 0 /root/tenable-tracker/maintenance.sh >> /root/tenable-tracker/logs/maintenance.log 2>&1
+```
+
+**Note:** `maintenance.sh` calls `psql` directly and requires password-free database access. Set this up via one of:
+
+- A `~/.pgpass` entry: `127.0.0.1:5432:tenable_trends:tenable_trends_user:yourpassword`
+- `PGPASSWORD` set in the cron environment
+- `pg_hba.conf` set to `trust` for localhost (not recommended for production)
+
+---
+
+## 13. Hit-By-A-Bus Notes
+
+- `config.yaml` contains all mapping rules and filter settings
+- `secrets.yaml` holds all credentials (never committed)
+- Tables are created automatically on first run
+- Cron automates daily ingestion via `run_collector.sh`
+- Power BI reads directly from the PostgreSQL database
+- Dependencies: Python 3, `requests`, `pyyaml`, `psycopg2-binary`, PostgreSQL

@@ -9,7 +9,9 @@ crowdstrike:
 reporting:
   days_last_seen: 30
   vuln_published_older_than_days: 30
-  require_exploit_for_remote_no_auth: false
+  # true  = only flag remote/no-auth vulns that also have a known exploit (lower noise, recommended)
+  # false = flag all network-accessible, no-auth vulns regardless of exploit availability (broader coverage)
+  require_exploit_for_remote_no_auth: true
   retention_days: 540
 
 sites:
