@@ -9,7 +9,7 @@ Designed to replace manual CSV exports, pivot-table hell, and one-off reporting.
 ## 1. Features
 
 - **Automated daily ingestion** of Tenable.io vulnerability data via the Exports API.
-- **Site-aware reporting** using Tenable tags (e.g., BDH, BH, MTHCS, etc.), with untagged assets grouped into `Ungrouped`.
+- **Site-aware reporting** using Tenable tags (e.g., Site A, Site B etc.), with untagged assets grouped into `Ungrouped`.
 - **Severity breakdown**: Critical / High / Medium / Low.
 - **Remote/no-auth exploitability detection** using CVSS vectors (network, low complexity, no privileges).
 - **SLA metrics** per site and risk band (total vs breaches, including remote).
