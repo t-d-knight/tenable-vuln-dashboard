@@ -295,6 +295,14 @@ Or just run the full pipeline via `run_collector.sh` (see Section 10).
 
 `rollup_daily_metrics.py --dry-run` prints the computed rollup for today without writing anything — useful for comparing against known-good numbers before relying on the new pipeline, or for spot-checking after a `product_groups.yaml` rule change.
 
+### First run on a new box
+
+`bootstrap.sh` runs the one-time sequence to populate the new schema from scratch and confirm it's ready for the Grafana dashboard: `ingest_findings.py` → `rollup_daily_metrics.py --dry-run` (preview) → `rollup_daily_metrics.py` (write) → `kev_sync.py` → `grafana/preflight_check.py`. This is separate from `run_collector.sh` (the nightly cron pipeline, which also handles asset collection and product reclassification) — run it once after deploying to a new box, or any time you want to re-verify the pipeline end to end.
+
+```bash
+./bootstrap.sh
+```
+
 ---
 
 ## 10. Cron Automation
