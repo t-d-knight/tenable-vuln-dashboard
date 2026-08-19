@@ -21,6 +21,7 @@ from db import pg_connect
 REQUIRED_RELATIONS = [
     ("vuln_findings", "table", True, "Run ingest_findings.py first."),
     ("vuln_finding_cves", "table", False, "Empty until findings with CVEs are ingested -- OK if vuln_findings is also empty."),
+    ("sla_policy", "table", True, "Run any script that calls db_schema.ensure_schema() (e.g. ingest_findings.py)."),
     ("cisa_kev", "table", True, "Run kev_sync.py first (CISA KEV feed sync)."),
     ("daily_site_metrics", "table", True, "Run rollup_daily_metrics.py first."),
     ("daily_sla_metrics", "table", True, "Run rollup_daily_metrics.py first."),

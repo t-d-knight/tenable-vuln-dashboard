@@ -10,41 +10,98 @@
     }
   ],
   "__requires": [
-    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
-    { "type": "datasource", "id": "postgres", "name": "PostgreSQL", "version": "1.0.0" },
-    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
-    { "type": "panel", "id": "table", "name": "Table", "version": "" },
-    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
-    { "type": "panel", "id": "bargauge", "name": "Bar gauge", "version": "" },
-    { "type": "panel", "id": "row", "name": "Row", "version": "" }
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "postgres",
+      "name": "PostgreSQL",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "bargauge",
+      "name": "Bar gauge",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "row",
+      "name": "Row",
+      "version": ""
+    }
   ],
   "id": null,
   "uid": "vuln-mgmt-core",
   "title": "Vulnerability Management",
   "description": "Site/severity trending, SLA compliance, CISA KEV exposure, worst-devices hit list, and MTTR tracking against the vuln_findings core. Companion to Vuln-Analysis-Current.pbix, not a replacement.",
-  "tags": ["vuln-management", "tenable", "kev", "mttr"],
+  "tags": [
+    "vuln-management",
+    "tenable",
+    "kev",
+    "mttr"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 1,
   "editable": true,
   "graphTooltip": 1,
   "refresh": "1h",
-  "time": { "from": "now-90d", "to": "now" },
-  "timepicker": { "refresh_intervals": ["1h", "12h", "1d"] },
-  "annotations": { "list": [] },
+  "time": {
+    "from": "now-90d",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "1h",
+      "12h",
+      "1d"
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
   "templating": {
     "list": [
       {
         "name": "site",
         "type": "query",
         "label": "Site",
-        "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+        "datasource": {
+          "type": "postgres",
+          "uid": "${DS_POSTGRESQL}"
+        },
         "query": "SELECT DISTINCT site_label FROM dim_site ORDER BY site_label",
         "refresh": 2,
         "sort": 1,
         "multi": true,
         "includeAll": true,
-        "current": { "text": "All", "value": "$__all" }
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
       }
     ]
   },
@@ -53,7 +110,12 @@
       "id": 100,
       "type": "row",
       "title": "Executive Summary",
-      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
       "collapsed": false,
       "panels": []
     },
@@ -61,10 +123,31 @@
       "id": 1,
       "type": "stat",
       "title": "Open Findings",
-      "gridPos": { "x": 0, "y": 1, "w": 6, "h": 4 },
-      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
       "targets": [
         {
           "refId": "A",
@@ -77,12 +160,50 @@
       "id": 2,
       "type": "stat",
       "title": "Critical + High Open",
-      "gridPos": { "x": 6, "y": 1, "w": 6, "h": 4 },
-      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
-      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [
-        { "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 25 }
-      ] } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 25
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
       "targets": [
         {
           "refId": "A",
@@ -95,12 +216,50 @@
       "id": 3,
       "type": "stat",
       "title": "SLA Breach Rate",
-      "gridPos": { "x": 12, "y": 1, "w": 6, "h": 4 },
-      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
-      "fieldConfig": { "defaults": { "unit": "percent", "color": { "mode": "thresholds" }, "thresholds": { "steps": [
-        { "color": "green", "value": null }, { "color": "orange", "value": 10 }, { "color": "red", "value": 25 }
-      ] } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 25
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
       "targets": [
         {
           "refId": "A",
@@ -113,12 +272,50 @@
       "id": 4,
       "type": "stat",
       "title": "% Findings with Active KEV",
-      "gridPos": { "x": 18, "y": 1, "w": 6, "h": 4 },
-      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
-      "fieldConfig": { "defaults": { "unit": "percent", "color": { "mode": "thresholds" }, "thresholds": { "steps": [
-        { "color": "green", "value": null }, { "color": "orange", "value": 5 }, { "color": "red", "value": 15 }
-      ] } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 15
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
       "targets": [
         {
           "refId": "A",
@@ -131,10 +328,34 @@
       "id": 5,
       "type": "timeseries",
       "title": "Open Findings by Severity",
-      "gridPos": { "x": 0, "y": 5, "w": 24, "h": 8 },
-      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
-      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 20, "stacking": { "mode": "normal" } } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 20,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
       "targets": [
         {
           "refId": "A",
@@ -147,17 +368,60 @@
       "id": 101,
       "type": "row",
       "title": "SLA Compliance",
-      "gridPos": { "x": 0, "y": 13, "w": 24, "h": 1 },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 1
+      },
       "collapsed": false,
       "panels": []
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Current SLA Policy",
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 24,
+        "h": 3
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT severity AS \"Severity\", threshold_days AS \"SLA (days)\", updated_at AS \"Last Changed\" FROM sla_policy ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END"
+        }
+      ]
     },
     {
       "id": 6,
       "type": "table",
       "title": "SLA Breach by Site & Risk (latest snapshot)",
-      "gridPos": { "x": 0, "y": 14, "w": 12, "h": 8 },
-      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
       "options": {},
       "targets": [
         {
@@ -171,10 +435,28 @@
       "id": 7,
       "type": "timeseries",
       "title": "SLA Breach Rate Trend by Risk Band",
-      "gridPos": { "x": 12, "y": 14, "w": 12, "h": 8 },
-      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
-      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "gridPos": {
+        "x": 12,
+        "y": 17,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
       "targets": [
         {
           "refId": "A",
@@ -187,7 +469,12 @@
       "id": 102,
       "type": "row",
       "title": "CISA KEV Exposure",
-      "gridPos": { "x": 0, "y": 22, "w": 24, "h": 1 },
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 24,
+        "h": 1
+      },
       "collapsed": false,
       "panels": []
     },
@@ -195,12 +482,46 @@
       "id": 8,
       "type": "stat",
       "title": "Open KEV Count",
-      "gridPos": { "x": 0, "y": 23, "w": 8, "h": 4 },
-      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
-      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [
-        { "color": "green", "value": null }, { "color": "red", "value": 1 }
-      ] } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
       "targets": [
         {
           "refId": "A",
@@ -213,12 +534,46 @@
       "id": 9,
       "type": "stat",
       "title": "Ransomware-Flagged",
-      "gridPos": { "x": 8, "y": 23, "w": 8, "h": 4 },
-      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
-      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [
-        { "color": "green", "value": null }, { "color": "red", "value": 1 }
-      ] } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "gridPos": {
+        "x": 8,
+        "y": 26,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
       "targets": [
         {
           "refId": "A",
@@ -231,12 +586,46 @@
       "id": 10,
       "type": "stat",
       "title": "Past-Due (KEV due_date)",
-      "gridPos": { "x": 16, "y": 23, "w": 8, "h": 4 },
-      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
-      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [
-        { "color": "green", "value": null }, { "color": "red", "value": 1 }
-      ] } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "gridPos": {
+        "x": 16,
+        "y": 26,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
       "targets": [
         {
           "refId": "A",
@@ -249,10 +638,28 @@
       "id": 11,
       "type": "timeseries",
       "title": "Open KEV Trend",
-      "gridPos": { "x": 0, "y": 27, "w": 24, "h": 8 },
-      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
       "targets": [
         {
           "refId": "A",
@@ -265,9 +672,20 @@
       "id": 12,
       "type": "table",
       "title": "Open KEV Findings (soonest due first)",
-      "gridPos": { "x": 0, "y": 35, "w": 24, "h": 10 },
-      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
       "options": {},
       "targets": [
         {
@@ -281,7 +699,12 @@
       "id": 103,
       "type": "row",
       "title": "Worst Devices",
-      "gridPos": { "x": 0, "y": 45, "w": 24, "h": 1 },
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 24,
+        "h": 1
+      },
       "collapsed": false,
       "panels": []
     },
@@ -289,14 +712,41 @@
       "id": 13,
       "type": "table",
       "title": "Worst Devices (by risk score)",
-      "gridPos": { "x": 0, "y": 46, "w": 24, "h": 10 },
-      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
-      "fieldConfig": { "defaults": {}, "overrides": [
-        { "matcher": { "id": "byName", "options": "Risk Score" }, "properties": [
-          { "id": "custom.cellOptions", "value": { "type": "color-background" } },
-          { "id": "color", "value": { "mode": "continuous-RdYlGr" } }
-        ] }
-      ] },
+      "gridPos": {
+        "x": 0,
+        "y": 49,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Risk Score"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "continuous-GrYlRd"
+                }
+              }
+            ]
+          }
+        ]
+      },
       "options": {},
       "targets": [
         {
@@ -310,7 +760,12 @@
       "id": 104,
       "type": "row",
       "title": "MTTR & SLA Tracking",
-      "gridPos": { "x": 0, "y": 56, "w": 24, "h": 1 },
+      "gridPos": {
+        "x": 0,
+        "y": 59,
+        "w": 24,
+        "h": 1
+      },
       "collapsed": false,
       "panels": []
     },
@@ -318,10 +773,28 @@
       "id": 14,
       "type": "timeseries",
       "title": "Avg Remediation Time by Severity",
-      "gridPos": { "x": 0, "y": 57, "w": 14, "h": 8 },
-      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
-      "fieldConfig": { "defaults": { "unit": "d" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "gridPos": {
+        "x": 0,
+        "y": 60,
+        "w": 14,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "d"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
       "targets": [
         {
           "refId": "A",
@@ -334,12 +807,50 @@
       "id": 15,
       "type": "bargauge",
       "title": "SLA Compliance Rate by Severity (selected period)",
-      "gridPos": { "x": 14, "y": 57, "w": 10, "h": 8 },
-      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
-      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "steps": [
-        { "color": "red", "value": null }, { "color": "orange", "value": 60 }, { "color": "green", "value": 85 }
-      ] } }, "overrides": [] },
-      "options": { "displayMode": "gradient", "orientation": "horizontal" },
+      "gridPos": {
+        "x": 14,
+        "y": 60,
+        "w": 10,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 60
+              },
+              {
+                "color": "green",
+                "value": 85
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "values": true,
+          "calcs": [],
+          "fields": ""
+        },
+        "showUnfilled": true
+      },
       "targets": [
         {
           "refId": "A",
@@ -352,7 +863,12 @@
       "id": 105,
       "type": "row",
       "title": "Product / Vendor Drilldown",
-      "gridPos": { "x": 0, "y": 65, "w": 24, "h": 1 },
+      "gridPos": {
+        "x": 0,
+        "y": 68,
+        "w": 24,
+        "h": 1
+      },
       "collapsed": false,
       "panels": []
     },
@@ -360,9 +876,20 @@
       "id": 16,
       "type": "table",
       "title": "Top Products by Open Findings (latest snapshot)",
-      "gridPos": { "x": 0, "y": 66, "w": 24, "h": 10 },
-      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": {
+        "x": 0,
+        "y": 69,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
       "options": {},
       "targets": [
         {

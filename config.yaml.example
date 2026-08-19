@@ -33,6 +33,17 @@ reporting:
   # prunes them. Separate from retention_days (which governs the daily_*
   # aggregate snapshot tables).
   findings_retention_days: 180
+  # SLA remediation windows in days, per severity. Synced into the
+  # sla_policy table (single source of truth for the SLA breach/MTTR
+  # compliance calculations AND the "Current SLA Policy" Grafana panel)
+  # every time db_schema.ensure_schema() runs. Changing this only affects
+  # today onward -- past daily_sla_metrics/daily_mttr_metrics rows keep
+  # whatever policy was in effect when they were computed.
+  sla_days:
+    critical: 2
+    high: 14
+    medium: 30
+    low: 60
 
 sites:
   - key: "Alpha-Site"

@@ -96,10 +96,16 @@ def is_remote_no_auth(
     return bool(exploit_available) or ("no known" not in ease)
 
 
-def sla_days(risk: str) -> int:
-    return {"critical": 2, "high": 14, "medium": 30, "low": 60}.get(
-        (risk or "").lower(), 60
-    )
+# Canonical default SLA policy -- the single fallback used when
+# config.yaml has no reporting.sla_days section. db_schema.py syncs
+# whichever values are actually in effect (config override or this
+# default) into the sla_policy table; nothing else should hardcode these.
+DEFAULT_SLA_DAYS = {"critical": 2, "high": 14, "medium": 30, "low": 60}
+
+
+def sla_days(risk: str, thresholds: Dict[str, int] = None) -> int:
+    thresholds = thresholds or DEFAULT_SLA_DAYS
+    return thresholds.get((risk or "").lower(), DEFAULT_SLA_DAYS["low"])
 
 
 def age_days(epoch_seconds: Any) -> float:

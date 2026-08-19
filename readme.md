@@ -180,6 +180,8 @@ Severity is determined first from CVSS base score, with Tenable's own severity a
 
 ### SLA Thresholds
 
+Defaults (`cvss.DEFAULT_SLA_DAYS`, overridable via `config.yaml`'s `reporting.sla_days`):
+
 | Band     | SLA (days) |
 |----------|------------|
 | Critical | 2          |
@@ -188,6 +190,10 @@ Severity is determined first from CVSS base score, with Tenable's own severity a
 | Low      | 60         |
 
 SLA age is measured from `first_found`. A finding is a breach if its age exceeds the band threshold.
+
+These values are synced into a `sla_policy` table every time `db_schema.ensure_schema()` runs (i.e. at the start of `ingest_findings.py`, `rollup_daily_metrics.py`, `kev_sync.py`, and `reclassify_product_families.py`) — it's the single place `fact_vuln_findings_current`'s `sla_breach` column and `rollup_daily_metrics.py`'s SLA/MTTR queries actually read, instead of each hardcoding the same `CASE` statement. Grafana's "Current SLA Policy" panel (SLA Compliance row) reads the same table, so the dashboard always shows whatever policy actually produced the numbers next to it.
+
+Changing `reporting.sla_days` only affects queries run **from that point on** — `daily_sla_metrics`/`daily_mttr_metrics` rows are point-in-time snapshots, so past rows keep whatever threshold was in effect when they were computed. A 90-day trend across a policy change shows an honest step, not a silently-rewritten history.
 
 ---
 
@@ -245,6 +251,10 @@ Daily KEV exposure per site: open KEV count (by severity), ransomware-flagged co
 ### `daily_mttr_metrics`
 
 Daily remediation-time trend, per site and severity, for findings that closed **that day** (not a rolling window): `fixed_count`, `avg_remediation_days`, `median_remediation_days`, `sla_compliant_count`, `sla_compliance_rate`.
+
+### `sla_policy`
+
+`severity` → `threshold_days` (see "SLA Thresholds" above) — synced from `config.yaml`'s `reporting.sla_days` every time `db_schema.ensure_schema()` runs. Everything that needs an SLA threshold reads this table instead of hardcoding one.
 
 ### Power BI views
 
