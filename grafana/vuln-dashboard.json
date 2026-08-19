@@ -114,7 +114,7 @@
         "x": 0,
         "y": 0,
         "w": 24,
-        "h": 7
+        "h": 10
       },
       "options": {
         "mode": "markdown",
@@ -131,7 +131,7 @@
       "title": "Executive Summary",
       "gridPos": {
         "x": 0,
-        "y": 7,
+        "y": 10,
         "w": 24,
         "h": 1
       },
@@ -144,7 +144,7 @@
       "title": "Open Findings",
       "gridPos": {
         "x": 0,
-        "y": 8,
+        "y": 11,
         "w": 6,
         "h": 4
       },
@@ -181,7 +181,7 @@
       "title": "Critical + High Open",
       "gridPos": {
         "x": 6,
-        "y": 8,
+        "y": 11,
         "w": 6,
         "h": 4
       },
@@ -237,7 +237,7 @@
       "title": "SLA Breach Rate",
       "gridPos": {
         "x": 12,
-        "y": 8,
+        "y": 11,
         "w": 6,
         "h": 4
       },
@@ -293,7 +293,7 @@
       "title": "% Findings with Active KEV",
       "gridPos": {
         "x": 18,
-        "y": 8,
+        "y": 11,
         "w": 6,
         "h": 4
       },
@@ -349,7 +349,7 @@
       "title": "Remote + No-Auth Crit/High Open",
       "gridPos": {
         "x": 0,
-        "y": 12,
+        "y": 15,
         "w": 6,
         "h": 8
       },
@@ -405,7 +405,7 @@
       "title": "Remote + No-Auth Crit/High Trend",
       "gridPos": {
         "x": 6,
-        "y": 12,
+        "y": 15,
         "w": 18,
         "h": 8
       },
@@ -473,7 +473,7 @@
       "title": "Open Findings by Severity",
       "gridPos": {
         "x": 0,
-        "y": 20,
+        "y": 23,
         "w": 24,
         "h": 8
       },
@@ -569,14 +569,15 @@
       ]
     },
     {
-      "id": 22,
-      "type": "timeseries",
-      "title": "Vulns Remediated per Day",
+      "id": 212,
+      "type": "stat",
+      "title": "Net Change (Opened \u2212 Closed)",
+      "description": "Findings opened minus findings closed over the selected time range. Positive = backlog growing.",
       "gridPos": {
         "x": 0,
-        "y": 28,
-        "w": 24,
-        "h": 6
+        "y": 31,
+        "w": 6,
+        "h": 8
       },
       "datasource": {
         "type": "postgres",
@@ -586,15 +587,108 @@
         "defaults": {
           "unit": "short",
           "color": {
-            "mode": "fixed",
-            "fixedColor": "green"
+            "mode": "thresholds"
           },
-          "custom": {
-            "drawStyle": "bars",
-            "fillOpacity": 60
-          }
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "range",
+              "options": {
+                "from": 0,
+                "to": 999999999,
+                "result": {
+                  "text": "+${__value.text}"
+                }
+              }
+            }
+          ]
         },
         "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "WITH opened AS (\n  SELECT count(*) AS n FROM vuln_findings\n  WHERE site_label IN ($site) AND first_found::date BETWEEN '${__from:date}' AND '${__to:date}'\n),\nclosed AS (\n  SELECT COALESCE(sum(fixed_count),0) AS n FROM daily_mttr_metrics\n  WHERE site_label IN ($site) AND snapshot_date BETWEEN '${__from:date}' AND '${__to:date}'\n)\nSELECT (opened.n - closed.n)::int AS \"Net Change\" FROM opened, closed"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Opened vs. Remediated per Day",
+      "gridPos": {
+        "x": 6,
+        "y": 31,
+        "w": 18,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Opened"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Closed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -606,7 +700,7 @@
         {
           "refId": "A",
           "format": "time_series",
-          "rawSql": "SELECT snapshot_date::timestamp AS time, sum(fixed_count) AS \"Remediated\" FROM daily_mttr_metrics WHERE site_label IN ($site) AND snapshot_date::date BETWEEN '${__from:date}' AND '${__to:date}' GROUP BY snapshot_date ORDER BY time"
+          "rawSql": "WITH opened AS (\n  SELECT date_trunc('day', first_found)::date AS d, count(*) AS n\n  FROM vuln_findings\n  WHERE site_label IN ($site) AND first_found::date BETWEEN '${__from:date}' AND '${__to:date}'\n  GROUP BY 1\n),\nclosed AS (\n  SELECT snapshot_date AS d, sum(fixed_count) AS n\n  FROM daily_mttr_metrics\n  WHERE site_label IN ($site) AND snapshot_date BETWEEN '${__from:date}' AND '${__to:date}'\n  GROUP BY 1\n)\nSELECT COALESCE(o.d, c.d)::timestamp AS time, COALESCE(o.n, 0) AS \"Opened\", -COALESCE(c.n, 0) AS \"Closed\"\nFROM opened o FULL OUTER JOIN closed c ON o.d = c.d\nORDER BY time"
         }
       ]
     },
@@ -616,7 +710,7 @@
       "title": "Trend (7-Day Change)",
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 39,
         "w": 24,
         "h": 1
       },
@@ -629,7 +723,7 @@
       "title": "Open Findings \u0394 (7d)",
       "gridPos": {
         "x": 0,
-        "y": 35,
+        "y": 40,
         "w": 6,
         "h": 4
       },
@@ -693,7 +787,7 @@
       "title": "Crit + High \u0394 (7d)",
       "gridPos": {
         "x": 6,
-        "y": 35,
+        "y": 40,
         "w": 6,
         "h": 4
       },
@@ -757,7 +851,7 @@
       "title": "SLA Breach Rate \u0394 (7d, pts)",
       "gridPos": {
         "x": 12,
-        "y": 35,
+        "y": 40,
         "w": 6,
         "h": 4
       },
@@ -821,7 +915,7 @@
       "title": "Active KEV % \u0394 (7d, pts)",
       "gridPos": {
         "x": 18,
-        "y": 35,
+        "y": 40,
         "w": 6,
         "h": 4
       },
@@ -885,7 +979,7 @@
       "title": "SLA Compliance",
       "gridPos": {
         "x": 0,
-        "y": 39,
+        "y": 44,
         "w": 24,
         "h": 1
       },
@@ -898,7 +992,7 @@
       "title": "Critical SLA (days)",
       "gridPos": {
         "x": 0,
-        "y": 40,
+        "y": 45,
         "w": 6,
         "h": 3
       },
@@ -939,7 +1033,7 @@
       "title": "High SLA (days)",
       "gridPos": {
         "x": 6,
-        "y": 40,
+        "y": 45,
         "w": 6,
         "h": 3
       },
@@ -980,7 +1074,7 @@
       "title": "Medium SLA (days)",
       "gridPos": {
         "x": 12,
-        "y": 40,
+        "y": 45,
         "w": 6,
         "h": 3
       },
@@ -1021,7 +1115,7 @@
       "title": "Low SLA (days)",
       "gridPos": {
         "x": 18,
-        "y": 40,
+        "y": 45,
         "w": 6,
         "h": 3
       },
@@ -1062,7 +1156,7 @@
       "title": "SLA Breach by Site & Risk (latest snapshot)",
       "gridPos": {
         "x": 0,
-        "y": 43,
+        "y": 48,
         "w": 12,
         "h": 8
       },
@@ -1089,7 +1183,7 @@
       "title": "SLA Breach Rate Trend by Risk Band",
       "gridPos": {
         "x": 12,
-        "y": 43,
+        "y": 48,
         "w": 12,
         "h": 8
       },
@@ -1184,7 +1278,7 @@
       "title": "CISA KEV Exposure",
       "gridPos": {
         "x": 0,
-        "y": 51,
+        "y": 56,
         "w": 24,
         "h": 1
       },
@@ -1197,7 +1291,7 @@
       "title": "Open KEV Count",
       "gridPos": {
         "x": 0,
-        "y": 52,
+        "y": 57,
         "w": 8,
         "h": 4
       },
@@ -1249,7 +1343,7 @@
       "title": "Ransomware-Flagged",
       "gridPos": {
         "x": 8,
-        "y": 52,
+        "y": 57,
         "w": 8,
         "h": 4
       },
@@ -1301,7 +1395,7 @@
       "title": "Past-Due (KEV due_date)",
       "gridPos": {
         "x": 16,
-        "y": 52,
+        "y": 57,
         "w": 8,
         "h": 4
       },
@@ -1353,7 +1447,7 @@
       "title": "Open KEV Trend",
       "gridPos": {
         "x": 0,
-        "y": 56,
+        "y": 61,
         "w": 24,
         "h": 8
       },
@@ -1387,7 +1481,7 @@
       "title": "Open KEV Findings (by CVE, soonest due first)",
       "gridPos": {
         "x": 0,
-        "y": 64,
+        "y": 69,
         "w": 24,
         "h": 10
       },
@@ -1466,7 +1560,7 @@
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT kev_cve_id AS \"CVE\", round(max(cvss_score)::numeric,1) AS \"CVSS\", max(kev_due_date) AS \"KEV Due\", max(kev_ransomware_use) AS \"Ransomware Use\", count(*) AS \"Findings\", count(DISTINCT source_asset_id) AS \"Assets\", count(DISTINCT site_label) AS \"Sites\", count(*) FILTER (WHERE severity='critical') AS \"Crit\", count(*) FILTER (WHERE severity='high') AS \"High\", count(*) FILTER (WHERE severity='medium') AS \"Med\", count(*) FILTER (WHERE severity='low') AS \"Low\", round(max(age_days)::numeric,1) AS \"Oldest (days)\" FROM fact_vuln_findings_current WHERE has_kev AND site_label IN ($site) GROUP BY kev_cve_id ORDER BY \"KEV Due\" ASC NULLS LAST, \"Crit\" DESC LIMIT 100"
+          "rawSql": "SELECT kev_cve_id AS \"CVE\", mode() WITHIN GROUP (ORDER BY product_family) FILTER (WHERE product_family IS NOT NULL) AS \"Application\", round(max(cvss_score)::numeric,1) AS \"CVSS\", max(kev_due_date) AS \"KEV Due\", max(kev_ransomware_use) AS \"Ransomware Use\", count(*) AS \"Findings\", count(DISTINCT source_asset_id) AS \"Assets\", count(DISTINCT site_label) AS \"Sites\", count(*) FILTER (WHERE severity='critical') AS \"Crit\", count(*) FILTER (WHERE severity='high') AS \"High\", count(*) FILTER (WHERE severity='medium') AS \"Med\", count(*) FILTER (WHERE severity='low') AS \"Low\", round(max(age_days)::numeric,1) AS \"Oldest (days)\" FROM fact_vuln_findings_current WHERE has_kev AND site_label IN ($site) GROUP BY kev_cve_id ORDER BY \"KEV Due\" ASC NULLS LAST, \"Crit\" DESC LIMIT 100"
         }
       ]
     },
@@ -1476,7 +1570,7 @@
       "title": "Predictive Risk (EPSS)",
       "gridPos": {
         "x": 0,
-        "y": 74,
+        "y": 79,
         "w": 24,
         "h": 1
       },
@@ -1489,7 +1583,7 @@
       "title": "High-EPSS, Not-Yet-KEV",
       "gridPos": {
         "x": 0,
-        "y": 75,
+        "y": 80,
         "w": 6,
         "h": 8
       },
@@ -1545,7 +1639,7 @@
       "title": "Avg / Max EPSS Trend",
       "gridPos": {
         "x": 6,
-        "y": 75,
+        "y": 80,
         "w": 18,
         "h": 8
       },
@@ -1584,9 +1678,9 @@
       "title": "NVD Enrichment Coverage",
       "gridPos": {
         "x": 0,
-        "y": 83,
+        "y": 85,
         "w": 24,
-        "h": 3
+        "h": 4
       },
       "datasource": {
         "type": "postgres",
@@ -1611,7 +1705,7 @@
       "title": "Likely Next (High EPSS, Not Yet KEV) - by CVE",
       "gridPos": {
         "x": 0,
-        "y": 86,
+        "y": 92,
         "w": 24,
         "h": 10
       },
@@ -1690,7 +1784,7 @@
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT epss_cve_id AS \"CVE\", round(max(cvss_score)::numeric,1) AS \"CVSS\", round((epss_score*100)::numeric,1) AS \"EPSS %\", round((epss_percentile*100)::numeric,1) AS \"Percentile\", count(*) AS \"Findings\", count(DISTINCT source_asset_id) AS \"Assets\", count(DISTINCT site_label) AS \"Sites\", count(*) FILTER (WHERE severity='critical') AS \"Crit\", count(*) FILTER (WHERE severity='high') AS \"High\", count(*) FILTER (WHERE severity='medium') AS \"Med\", count(*) FILTER (WHERE severity='low') AS \"Low\", count(*) FILTER (WHERE is_remote_no_auth) AS \"Remote/No-Auth\", round(max(age_days)::numeric,1) AS \"Oldest (days)\", ((count(*) FILTER (WHERE severity='critical')*10 + count(*) FILTER (WHERE severity='high')*5 + count(*) FILTER (WHERE severity='medium')*2 + count(*) FILTER (WHERE severity='low')*1) + ROUND((count(*) FILTER (WHERE severity='critical')*10 + count(*) FILTER (WHERE severity='high')*5 + count(*) FILTER (WHERE severity='medium')*2 + count(*) FILTER (WHERE severity='low')*1) * epss_score) + (count(*) FILTER (WHERE is_remote_no_auth) * 5))::int AS \"Priority\" FROM fact_vuln_findings_current WHERE site_label IN ($site) AND epss_score >= 0.5 AND NOT has_kev GROUP BY epss_cve_id, epss_score, epss_percentile ORDER BY \"Priority\" DESC LIMIT 100"
+          "rawSql": "SELECT epss_cve_id AS \"CVE\", mode() WITHIN GROUP (ORDER BY product_family) FILTER (WHERE product_family IS NOT NULL) AS \"Application\", round(max(cvss_score)::numeric,1) AS \"CVSS\", round((epss_score*100)::numeric,1) AS \"EPSS %\", round((epss_percentile*100)::numeric,1) AS \"Percentile\", count(*) AS \"Findings\", count(DISTINCT source_asset_id) AS \"Assets\", count(DISTINCT site_label) AS \"Sites\", count(*) FILTER (WHERE severity='critical') AS \"Crit\", count(*) FILTER (WHERE severity='high') AS \"High\", count(*) FILTER (WHERE severity='medium') AS \"Med\", count(*) FILTER (WHERE severity='low') AS \"Low\", count(*) FILTER (WHERE is_remote_no_auth) AS \"Remote/No-Auth\", round(max(age_days)::numeric,1) AS \"Oldest (days)\", ((count(*) FILTER (WHERE severity='critical')*10 + count(*) FILTER (WHERE severity='high')*5 + count(*) FILTER (WHERE severity='medium')*2 + count(*) FILTER (WHERE severity='low')*1) + ROUND((count(*) FILTER (WHERE severity='critical')*10 + count(*) FILTER (WHERE severity='high')*5 + count(*) FILTER (WHERE severity='medium')*2 + count(*) FILTER (WHERE severity='low')*1) * epss_score) + (count(*) FILTER (WHERE is_remote_no_auth) * 5))::int AS \"Priority\" FROM fact_vuln_findings_current WHERE site_label IN ($site) AND epss_score >= 0.5 AND NOT has_kev GROUP BY epss_cve_id, epss_score, epss_percentile ORDER BY \"Priority\" DESC LIMIT 100"
         }
       ]
     },
@@ -1700,7 +1794,7 @@
       "title": "Worst Devices",
       "gridPos": {
         "x": 0,
-        "y": 96,
+        "y": 102,
         "w": 24,
         "h": 1
       },
@@ -1713,7 +1807,7 @@
       "title": "Worst Devices (by risk score)",
       "gridPos": {
         "x": 0,
-        "y": 97,
+        "y": 103,
         "w": 24,
         "h": 10
       },
@@ -1761,7 +1855,7 @@
       "title": "Top Patches to Deploy",
       "gridPos": {
         "x": 0,
-        "y": 107,
+        "y": 113,
         "w": 24,
         "h": 1
       },
@@ -1774,7 +1868,7 @@
       "title": "Top 10 Patches to Deploy (org-wide, not filtered by $site)",
       "gridPos": {
         "x": 0,
-        "y": 108,
+        "y": 114,
         "w": 24,
         "h": 10
       },
@@ -1822,7 +1916,7 @@
       "title": "MTTR & SLA Tracking",
       "gridPos": {
         "x": 0,
-        "y": 118,
+        "y": 124,
         "w": 24,
         "h": 1
       },
@@ -1835,7 +1929,7 @@
       "title": "Avg Remediation Time by Severity",
       "gridPos": {
         "x": 0,
-        "y": 119,
+        "y": 125,
         "w": 14,
         "h": 8
       },
@@ -1930,7 +2024,7 @@
       "title": "SLA Compliance Rate by Severity (selected period)",
       "gridPos": {
         "x": 14,
-        "y": 119,
+        "y": 125,
         "w": 10,
         "h": 8
       },
@@ -1986,7 +2080,7 @@
       "title": "Product / Vendor Drilldown",
       "gridPos": {
         "x": 0,
-        "y": 127,
+        "y": 133,
         "w": 24,
         "h": 1
       },
@@ -1999,7 +2093,7 @@
       "title": "Top Products by Open Findings (latest snapshot)",
       "gridPos": {
         "x": 0,
-        "y": 128,
+        "y": 134,
         "w": 24,
         "h": 10
       },
