@@ -325,12 +325,136 @@
       ]
     },
     {
+      "id": 23,
+      "type": "stat",
+      "title": "Remote + No-Auth Crit/High Open",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 25
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT count(*) AS \"Remote+NoAuth Crit/High\" FROM fact_vuln_findings_current WHERE site_label IN ($site) AND severity IN ('critical','high') AND is_remote_no_auth"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "Remote + No-Auth Crit/High Trend",
+      "gridPos": {
+        "x": 6,
+        "y": 5,
+        "w": 18,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 15
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Remote Critical"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Remote High"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT snapshot_date::timestamp AS time, sum(remote_crit) AS \"Remote Critical\", sum(remote_high) AS \"Remote High\" FROM daily_site_metrics WHERE site_label IN ($site) AND snapshot_date::date BETWEEN '${__from:date}' AND '${__to:date}' GROUP BY snapshot_date ORDER BY time"
+        }
+      ]
+    },
+    {
       "id": 5,
       "type": "timeseries",
       "title": "Open Findings by Severity",
       "gridPos": {
         "x": 0,
-        "y": 5,
+        "y": 13,
         "w": 24,
         "h": 8
       },
@@ -348,7 +472,68 @@
             }
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Critical"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "High"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Medium"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Low"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -365,12 +550,323 @@
       ]
     },
     {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Vulns Remediated per Day",
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 24,
+        "h": 6
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT snapshot_date::timestamp AS time, sum(fixed_count) AS \"Remediated\" FROM daily_mttr_metrics WHERE site_label IN ($site) AND snapshot_date::date BETWEEN '${__from:date}' AND '${__to:date}' GROUP BY snapshot_date ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 106,
+      "type": "row",
+      "title": "Trend (7-Day Change)",
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "Open Findings \u0394 (7d)",
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "range",
+              "options": {
+                "from": 0,
+                "to": 999999999,
+                "result": {
+                  "text": "+${__value.text}"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "WITH latest AS (\n  SELECT max(snapshot_date) AS d FROM daily_site_metrics\n),\nhist AS (\n  SELECT max(snapshot_date) AS d FROM daily_site_metrics, latest\n  WHERE snapshot_date::date <= latest.d::date - 7\n),\nnow_v AS (\n  SELECT coalesce(sum(total),0) AS v FROM daily_site_metrics, latest\n  WHERE site_label IN ($site) AND snapshot_date = latest.d\n),\nthen_v AS (\n  SELECT coalesce(sum(total),0) AS v FROM daily_site_metrics, hist\n  WHERE site_label IN ($site) AND snapshot_date = hist.d\n)\nSELECT (now_v.v - then_v.v) AS delta FROM now_v, then_v;"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "stat",
+      "title": "Crit + High \u0394 (7d)",
+      "gridPos": {
+        "x": 6,
+        "y": 28,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "range",
+              "options": {
+                "from": 0,
+                "to": 999999999,
+                "result": {
+                  "text": "+${__value.text}"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "WITH latest AS (\n  SELECT max(snapshot_date) AS d FROM daily_site_metrics\n),\nhist AS (\n  SELECT max(snapshot_date) AS d FROM daily_site_metrics, latest\n  WHERE snapshot_date::date <= latest.d::date - 7\n),\nnow_v AS (\n  SELECT coalesce(sum(crit)+sum(high),0) AS v FROM daily_site_metrics, latest\n  WHERE site_label IN ($site) AND snapshot_date = latest.d\n),\nthen_v AS (\n  SELECT coalesce(sum(crit)+sum(high),0) AS v FROM daily_site_metrics, hist\n  WHERE site_label IN ($site) AND snapshot_date = hist.d\n)\nSELECT (now_v.v - then_v.v) AS delta FROM now_v, then_v;"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "SLA Breach Rate \u0394 (7d, pts)",
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "range",
+              "options": {
+                "from": 0,
+                "to": 999999999,
+                "result": {
+                  "text": "+${__value.text}"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "WITH latest AS (\n  SELECT max(snapshot_date) AS d FROM daily_sla_metrics\n),\nhist AS (\n  SELECT max(snapshot_date) AS d FROM daily_sla_metrics, latest\n  WHERE snapshot_date::date <= latest.d::date - 7\n),\nnow_v AS (\n  SELECT round(100.0*sum(sla_breaches)/NULLIF(sum(total_vulns),0),1) AS v FROM daily_sla_metrics, latest\n  WHERE site_label IN ($site) AND snapshot_date = latest.d\n),\nthen_v AS (\n  SELECT round(100.0*sum(sla_breaches)/NULLIF(sum(total_vulns),0),1) AS v FROM daily_sla_metrics, hist\n  WHERE site_label IN ($site) AND snapshot_date = hist.d\n)\nSELECT (now_v.v - then_v.v) AS delta FROM now_v, then_v;"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Active KEV % \u0394 (7d, pts)",
+      "gridPos": {
+        "x": 18,
+        "y": 28,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "range",
+              "options": {
+                "from": 0,
+                "to": 999999999,
+                "result": {
+                  "text": "+${__value.text}"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "WITH latest AS (\n  SELECT max(snapshot_date) AS d FROM daily_kev_metrics\n),\nhist AS (\n  SELECT max(snapshot_date) AS d FROM daily_kev_metrics, latest\n  WHERE snapshot_date::date <= latest.d::date - 7\n),\nnow_v AS (\n  SELECT round(100.0*sum(kev_open_total)/NULLIF(sum(kev_open_total)+sum(non_kev_open_total),0),1) AS v FROM daily_kev_metrics, latest\n  WHERE site_label IN ($site) AND snapshot_date = latest.d\n),\nthen_v AS (\n  SELECT round(100.0*sum(kev_open_total)/NULLIF(sum(kev_open_total)+sum(non_kev_open_total),0),1) AS v FROM daily_kev_metrics, hist\n  WHERE site_label IN ($site) AND snapshot_date = hist.d\n)\nSELECT (now_v.v - then_v.v) AS delta FROM now_v, then_v;"
+        }
+      ]
+    },
+    {
       "id": 101,
       "type": "row",
       "title": "SLA Compliance",
       "gridPos": {
         "x": 0,
-        "y": 13,
+        "y": 32,
         "w": 24,
         "h": 1
       },
@@ -383,7 +879,7 @@
       "title": "Current SLA Policy",
       "gridPos": {
         "x": 0,
-        "y": 14,
+        "y": 33,
         "w": 24,
         "h": 3
       },
@@ -410,7 +906,7 @@
       "title": "SLA Breach by Site & Risk (latest snapshot)",
       "gridPos": {
         "x": 0,
-        "y": 17,
+        "y": 36,
         "w": 12,
         "h": 8
       },
@@ -437,7 +933,7 @@
       "title": "SLA Breach Rate Trend by Risk Band",
       "gridPos": {
         "x": 12,
-        "y": 17,
+        "y": 36,
         "w": 12,
         "h": 8
       },
@@ -449,7 +945,68 @@
         "defaults": {
           "unit": "percent"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Critical"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "High"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Medium"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Low"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -471,7 +1028,7 @@
       "title": "CISA KEV Exposure",
       "gridPos": {
         "x": 0,
-        "y": 25,
+        "y": 44,
         "w": 24,
         "h": 1
       },
@@ -484,7 +1041,7 @@
       "title": "Open KEV Count",
       "gridPos": {
         "x": 0,
-        "y": 26,
+        "y": 45,
         "w": 8,
         "h": 4
       },
@@ -536,7 +1093,7 @@
       "title": "Ransomware-Flagged",
       "gridPos": {
         "x": 8,
-        "y": 26,
+        "y": 45,
         "w": 8,
         "h": 4
       },
@@ -588,7 +1145,7 @@
       "title": "Past-Due (KEV due_date)",
       "gridPos": {
         "x": 16,
-        "y": 26,
+        "y": 45,
         "w": 8,
         "h": 4
       },
@@ -640,7 +1197,7 @@
       "title": "Open KEV Trend",
       "gridPos": {
         "x": 0,
-        "y": 30,
+        "y": 49,
         "w": 24,
         "h": 8
       },
@@ -674,7 +1231,7 @@
       "title": "Open KEV Findings (soonest due first)",
       "gridPos": {
         "x": 0,
-        "y": 38,
+        "y": 57,
         "w": 24,
         "h": 10
       },
@@ -701,7 +1258,7 @@
       "title": "Worst Devices",
       "gridPos": {
         "x": 0,
-        "y": 48,
+        "y": 67,
         "w": 24,
         "h": 1
       },
@@ -714,7 +1271,7 @@
       "title": "Worst Devices (by risk score)",
       "gridPos": {
         "x": 0,
-        "y": 49,
+        "y": 68,
         "w": 24,
         "h": 10
       },
@@ -762,7 +1319,7 @@
       "title": "MTTR & SLA Tracking",
       "gridPos": {
         "x": 0,
-        "y": 59,
+        "y": 78,
         "w": 24,
         "h": 1
       },
@@ -775,7 +1332,7 @@
       "title": "Avg Remediation Time by Severity",
       "gridPos": {
         "x": 0,
-        "y": 60,
+        "y": 79,
         "w": 14,
         "h": 8
       },
@@ -787,7 +1344,68 @@
         "defaults": {
           "unit": "d"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "critical"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "high"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "medium"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "low"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -809,7 +1427,7 @@
       "title": "SLA Compliance Rate by Severity (selected period)",
       "gridPos": {
         "x": 14,
-        "y": 60,
+        "y": 79,
         "w": 10,
         "h": 8
       },
@@ -865,7 +1483,7 @@
       "title": "Product / Vendor Drilldown",
       "gridPos": {
         "x": 0,
-        "y": 68,
+        "y": 87,
         "w": 24,
         "h": 1
       },
@@ -878,7 +1496,7 @@
       "title": "Top Products by Open Findings (latest snapshot)",
       "gridPos": {
         "x": 0,
-        "y": 69,
+        "y": 88,
         "w": 24,
         "h": 10
       },

@@ -201,6 +201,45 @@ DDL_STATEMENTS = [
         PRIMARY KEY (snapshot_date, site_label, severity)
     );
     """,
+    # EPSS (Exploit Prediction Scoring System, FIRST.org): daily-updated
+    # probability (0-1) a CVE will be exploited in the wild in the next 30
+    # days. Synced whole-catalog by epss_sync.py (public bulk CSV, no auth).
+    """
+    CREATE TABLE IF NOT EXISTS epss_scores (
+        cve_id       TEXT PRIMARY KEY,
+        epss         NUMERIC(8,5) NOT NULL,
+        percentile   NUMERIC(8,5) NOT NULL,
+        score_date   DATE,
+        synced_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_epss_scores_epss ON epss_scores (epss DESC);",
+    # Local cache for NVD CVSS lookups (nvd_enrich.py), keyed by CVE, so a
+    # given CVE is never re-queried once resolved. found=FALSE rows are
+    # only retried after a cooldown (NVD's own analyst backlog means a
+    # CVE with no score today may get one in a few weeks).
+    """
+    CREATE TABLE IF NOT EXISTS nvd_cvss_cache (
+        cve_id        TEXT PRIMARY KEY,
+        cvss_vector   TEXT,
+        cvss_score    NUMERIC(3,1),
+        cvss_version  TEXT,
+        found         BOOLEAN NOT NULL,
+        checked_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS daily_epss_metrics (
+        snapshot_date              DATE NOT NULL,
+        site_label                 TEXT NOT NULL,
+        site_tag                   TEXT,
+        avg_epss                   NUMERIC(6,4),
+        max_epss                   NUMERIC(6,4),
+        high_epss_open_total        INTEGER NOT NULL DEFAULT 0,
+        high_epss_non_kev_total     INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (snapshot_date, site_label)
+    );
+    """,
     # Power BI/Grafana fact view: currently-open findings, KEV-enriched.
     # A single LEFT JOIN LATERAL computes all KEV columns from one
     # subquery evaluation per row (same pattern as rollup_kev_metrics()
@@ -221,7 +260,9 @@ DDL_STATEMENTS = [
         k.cve_id AS kev_cve_id,
         k.date_added AS kev_date_added,
         k.due_date AS kev_due_date,
-        k.known_ransomware_campaign_use AS kev_ransomware_use
+        k.known_ransomware_campaign_use AS kev_ransomware_use,
+        e.epss AS epss_score,
+        e.percentile AS epss_percentile
     FROM vuln_findings vf
     LEFT JOIN sla_policy sp ON sp.severity = vf.severity
     LEFT JOIN LATERAL (
@@ -232,6 +273,14 @@ DDL_STATEMENTS = [
         ORDER BY kk.date_added DESC
         LIMIT 1
     ) k ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT es.epss, es.percentile
+        FROM vuln_finding_cves fc2
+        JOIN epss_scores es ON es.cve_id = fc2.cve
+        WHERE fc2.finding_id = vf.id
+        ORDER BY es.epss DESC
+        LIMIT 1
+    ) e ON TRUE
     WHERE vf.state IN ('OPEN','REOPENED');
     """,
     """

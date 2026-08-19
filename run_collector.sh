@@ -14,20 +14,31 @@ set -euo pipefail
 cd /root/tenable-tracker
 source venv/bin/activate
 
+# External enrichment catalogs, synced before ingest/rollup so the same
+# day's daily_kev_metrics/daily_epss_metrics reflect today's data, not
+# yesterday's.
+python3 kev_sync.py --config config.yaml
+python3 epss_sync.py --config config.yaml
+
 # Vendor-agnostic findings ingest (Tenable today; future CrowdStrike Falcon
 # Exposure Management / Intune adapters plug in here via config.yaml's
 # `sources:` list). Also refreshes the plugin/CVE catalog in the same pass.
 python3 ingest_findings.py --config config.yaml
 
+# Backfill CVSS vectors from NVD for CVE-backed findings the source vendor
+# didn't provide one for. Rate-limited and capped per run (see --max-lookups)
+# so a large backlog works through gradually across nightly runs rather than
+# stalling the pipeline; must run after ingest_findings.py so it has this
+# run's vuln_finding_cves to work from.
+python3 nvd_enrich.py --config config.yaml
+
 # Derive daily_site_metrics / daily_sla_metrics / daily_product_metrics /
-# daily_kev_metrics / daily_mttr_metrics from vuln_findings.
+# daily_kev_metrics / daily_epss_metrics / daily_mttr_metrics from
+# vuln_findings. Runs last among these so it sees everything above.
 python3 rollup_daily_metrics.py --config config.yaml
 
 # Reclassify product families to keep Top 10 clean after rule changes.
 python3 reclassify_product_families.py --config config.yaml
-
-# Refresh the CISA Known Exploited Vulnerabilities catalog.
-python3 kev_sync.py --config config.yaml
 
 # Asset Collection
 python3 crowdstrike_pull_assets.py --config config.yaml

@@ -305,6 +305,85 @@ def write_kev_metrics(cur, snapshot_date: dt.date, data: Dict[str, Dict[str, Any
 
 
 # ------------------------------------------------------------
+#  EPSS METRICS
+#  "High EPSS" threshold (0.5 = coin-flip-or-better odds of exploitation
+#  in the next 30 days) matches common risk-based-vuln-management practice
+#  pairing EPSS with KEV. high_epss_non_kev_total is the predictive
+#  watchlist: findings likely to be exploited soon that KEV hasn't
+#  confirmed yet.
+# ------------------------------------------------------------
+
+HIGH_EPSS_THRESHOLD = 0.5
+
+
+def rollup_epss_metrics(cur, cfg: Dict[str, Any], days_last_seen: int) -> Dict[str, Dict[str, Any]]:
+    cur.execute(
+        """
+        SELECT
+            vf.site_label,
+            max(vf.site_tag) AS site_tag,
+            avg(e.epss) AS avg_epss,
+            max(e.epss) AS max_epss,
+            count(*) FILTER (WHERE e.epss >= %(thresh)s) AS high_epss_open_total,
+            count(*) FILTER (WHERE e.epss >= %(thresh)s AND k.cve_id IS NULL) AS high_epss_non_kev_total
+        FROM vuln_findings vf
+        LEFT JOIN LATERAL (
+            SELECT es.epss
+            FROM vuln_finding_cves fc
+            JOIN epss_scores es ON es.cve_id = fc.cve
+            WHERE fc.finding_id = vf.id
+            ORDER BY es.epss DESC
+            LIMIT 1
+        ) e ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT k.cve_id
+            FROM vuln_finding_cves fc2
+            JOIN cisa_kev k ON k.cve_id = fc2.cve
+            WHERE fc2.finding_id = vf.id
+            LIMIT 1
+        ) k ON TRUE
+        WHERE vf.state IN ('OPEN','REOPENED')
+          AND vf.last_found >= now() - (%(days)s || ' days')::interval
+        GROUP BY vf.site_label
+        """,
+        {"days": days_last_seen, "thresh": HIGH_EPSS_THRESHOLD},
+    )
+    cols = [d.name for d in cur.description]
+    rows = {r[0]: dict(zip(cols, r)) for r in cur.fetchall()}
+
+    out: Dict[str, Dict[str, Any]] = {}
+    for lab, tag in _site_labels(cfg):
+        r = rows.get(lab)
+        if r:
+            out[lab] = {**r, "site_tag": r.get("site_tag") or tag}
+        else:
+            out[lab] = {
+                "site_tag": tag, "avg_epss": None, "max_epss": None,
+                "high_epss_open_total": 0, "high_epss_non_kev_total": 0,
+            }
+    return out
+
+
+def write_epss_metrics(cur, snapshot_date: dt.date, data: Dict[str, Dict[str, Any]]) -> None:
+    for lab, d in data.items():
+        cur.execute(
+            """
+            INSERT INTO daily_epss_metrics (
+                snapshot_date, site_label, site_tag,
+                avg_epss, max_epss, high_epss_open_total, high_epss_non_kev_total
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (snapshot_date, site_label) DO UPDATE SET
+                site_tag = EXCLUDED.site_tag,
+                avg_epss = EXCLUDED.avg_epss, max_epss = EXCLUDED.max_epss,
+                high_epss_open_total = EXCLUDED.high_epss_open_total,
+                high_epss_non_kev_total = EXCLUDED.high_epss_non_kev_total;
+            """,
+            (snapshot_date.isoformat(), lab, d["site_tag"], d["avg_epss"], d["max_epss"],
+             d["high_epss_open_total"], d["high_epss_non_kev_total"]),
+        )
+
+
+# ------------------------------------------------------------
 #  MTTR METRICS
 #  Cohort = findings whose last_fixed date is exactly snapshot_date (not a
 #  rolling window like daily_product_metrics.fixed_*), so this trends as a
@@ -391,6 +470,7 @@ def main():
     sla_rows = rollup_sla_metrics(cur, days_last_seen)
     product_rows = rollup_product_metrics(cur, days_last_seen, args.new_window_days)
     kev_data = rollup_kev_metrics(cur, cfg, days_last_seen)
+    epss_data = rollup_epss_metrics(cur, cfg, days_last_seen)
     mttr_rows = rollup_mttr_metrics(cur, snapshot_date)
 
     if args.dry_run:
@@ -399,6 +479,7 @@ def main():
         print(f"[rollup] sla_metrics ({len(sla_rows)} rows): {sla_rows}")
         print(f"[rollup] product_metrics ({len(product_rows)} rows, showing up to 10): {product_rows[:10]}")
         print(f"[rollup] kev_metrics: {kev_data}")
+        print(f"[rollup] epss_metrics: {epss_data}")
         print(f"[rollup] mttr_metrics ({len(mttr_rows)} rows): {mttr_rows}")
         conn.close()
         return
@@ -407,13 +488,14 @@ def main():
     write_sla_metrics(cur, snapshot_date, sla_rows)
     write_product_metrics(cur, snapshot_date, product_rows)
     write_kev_metrics(cur, snapshot_date, kev_data)
+    write_epss_metrics(cur, snapshot_date, epss_data)
     write_mttr_metrics(cur, snapshot_date, mttr_rows)
 
     conn.commit()
     conn.close()
     print(f"[rollup] Wrote daily_site_metrics, daily_sla_metrics, "
           f"daily_product_metrics ({len(product_rows)} rows), daily_kev_metrics, "
-          f"daily_mttr_metrics ({len(mttr_rows)} rows) for {snapshot_date}.")
+          f"daily_epss_metrics, daily_mttr_metrics ({len(mttr_rows)} rows) for {snapshot_date}.")
 
 
 if __name__ == "__main__":

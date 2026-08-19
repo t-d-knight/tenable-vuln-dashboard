@@ -256,13 +256,25 @@ Daily remediation-time trend, per site and severity, for findings that closed **
 
 `severity` → `threshold_days` (see "SLA Thresholds" above) — synced from `config.yaml`'s `reporting.sla_days` every time `db_schema.ensure_schema()` runs. Everything that needs an SLA threshold reads this table instead of hardcoding one.
 
+### `epss_scores`
+
+FIRST.org's EPSS (Exploit Prediction Scoring System) catalog, synced whole by `epss_sync.py` (public bulk CSV, no auth) every run. `epss` is a daily-updated 0–1 probability that a CVE gets exploited in the wild in the next 30 days -- the predictive complement to CISA KEV's binary "confirmed being exploited." Both are vendor-neutral, sourced independently of whatever's doing the scanning.
+
+### `nvd_cvss_cache`
+
+Local cache for `nvd_enrich.py`'s per-CVE NVD lookups, so a CVE is never queried more than necessary. Backfills `vuln_findings.cvss_vector`/`cvss_score` for CVE-backed findings the source vendor didn't provide a vector for -- only helps findings that actually have a CVE; non-CVE findings (compliance/misconfiguration checks) have nothing to look up and stay on the vendor's own severity rating. Rate-limited against NVD (5 req/30s public, 50 req/30s with a free key in `secrets.yaml`'s `nvd.api_key`) and capped per run (`--max-lookups`, default 200), so a large backlog works through gradually across nightly runs instead of stalling the pipeline.
+
+### `daily_epss_metrics`
+
+Daily EPSS exposure per site: average/max EPSS among open findings, count above the "high EPSS" threshold (0.5 -- coin-flip-or-better odds of exploitation soon), and `high_epss_non_kev_total` -- the predictive watchlist: findings likely to be exploited soon that CISA hasn't confirmed yet.
+
 ### Power BI views
 
-- **`fact_vuln_findings_current`** — every currently open/reopened finding, with `age_days`, `sla_breach`, `has_kev`, `kev_due_date`, `kev_ransomware_use` computed. This is the main fact view for drill-down tables.
+- **`fact_vuln_findings_current`** — every currently open/reopened finding, with `age_days`, `sla_breach`, `has_kev`, `kev_due_date`, `kev_ransomware_use`, `epss_score`, `epss_percentile` computed. This is the main fact view for drill-down tables.
 - **`asset_risk_summary`** — one row per asset (the "worst devices" hit list), with open severity counts, KEV/remote-no-auth counts, oldest open finding age, and a weighted `risk_score` for ranking.
 - **`dim_site`**, **`dim_product`** — small lookup dimensions.
 
-Tables are created automatically on first run (`db_schema.py`, called from `ingest_findings.py` / `rollup_daily_metrics.py` / `kev_sync.py`).
+Tables are created automatically on first run (`db_schema.py`, called from `ingest_findings.py` / `rollup_daily_metrics.py` / `kev_sync.py` / `epss_sync.py` / `nvd_enrich.py` / `reclassify_product_families.py`).
 
 ---
 
@@ -307,7 +319,7 @@ Or just run the full pipeline via `run_collector.sh` (see Section 10).
 
 ### First run on a new box
 
-`bootstrap.sh` runs the one-time sequence to populate the new schema from scratch and confirm it's ready for the Grafana dashboard: `ingest_findings.py` → `rollup_daily_metrics.py --dry-run` (preview) → `rollup_daily_metrics.py` (write) → `kev_sync.py` → `grafana/preflight_check.py`. This is separate from `run_collector.sh` (the nightly cron pipeline, which also handles asset collection and product reclassification) — run it once after deploying to a new box, or any time you want to re-verify the pipeline end to end.
+`bootstrap.sh` runs the one-time sequence to populate the new schema from scratch and confirm it's ready for the Grafana dashboard: `kev_sync.py` → `epss_sync.py` → `ingest_findings.py` → `nvd_enrich.py` → `rollup_daily_metrics.py --dry-run` (preview) → `rollup_daily_metrics.py` (write) → `grafana/preflight_check.py`. This is separate from `run_collector.sh` (the nightly cron pipeline, which also handles asset collection and product reclassification) — run it once after deploying to a new box, or any time you want to re-verify the pipeline end to end.
 
 ```bash
 ./bootstrap.sh
@@ -366,7 +378,9 @@ Suggested DAX measures (names + plain-language definitions — write these once 
 
 `grafana/vuln-dashboard.json` is a dashboard-as-code alternative/companion to the `.pbix` — same underlying views, kept in this repo so it evolves with the schema instead of needing manual rebuilding. It does not replace `Vuln-Analysis-Current.pbix`; both can point at the same database.
 
-Pages (as Grafana rows): Executive Summary, SLA Compliance, CISA KEV Exposure, Worst Devices (the `asset_risk_summary` hit list), MTTR & SLA Tracking, Product/Vendor Drilldown. A `$site` template variable (multi-select, sourced from `dim_site`) filters every panel.
+Pages (as Grafana rows): Executive Summary (headline KPIs, a "Remote + No-Auth Critical/High" KPI and trend — the actually-exploitable-right-now subset, since raw severity counts alone undersell how much of that risk is remotely reachable with no credentials — and a daily "Vulns Remediated" panel alongside the open-findings trend), Trend (7-Day Change) (delta stats vs. 7 days ago on the headline KPIs, colored red/green by whether it's moving the wrong or right way), SLA Compliance, CISA KEV Exposure, Worst Devices (the `asset_risk_summary` hit list), MTTR & SLA Tracking, Product/Vendor Drilldown. A `$site` template variable (multi-select, sourced from `dim_site`) filters every panel.
+
+Severity is colored consistently everywhere it appears as a category (Critical/High/Medium/Low breakdowns) as a red → orange → amber → yellow ramp, deliberately avoiding green — even "Low" severity findings aren't good news, so nothing in the severity scale should read as green. Green is reserved for genuinely positive signals: the 7-day trend deltas when a metric is improving, and daily remediation counts.
 
 ### Installing Grafana (if it isn't already on the box)
 
@@ -395,7 +409,7 @@ Grafana OSS is a core package — the PostgreSQL datasource type ships built in,
 python3 grafana/preflight_check.py --config config.yaml
 ```
 
-Checks Postgres connectivity, confirms every table/view the dashboard queries exists and has data (not just that `ingest_findings.py` ran once, but that `rollup_daily_metrics.py` and `kev_sync.py` have too), and flags configured sites with no findings yet -- these are hard requirements and it exits non-zero if any are missing.
+Checks Postgres connectivity, confirms every table/view the dashboard queries exists and has data (not just that `ingest_findings.py` ran once, but that `rollup_daily_metrics.py`, `kev_sync.py`, and `epss_sync.py` have too), and flags configured sites with no findings yet -- these are hard requirements and it exits non-zero if any are missing.
 
 It also checks Grafana itself, informationally (never blocks the exit code, since the data pipeline doesn't depend on Grafana being up): whether a local `grafana-server` systemd service is active, and whether `/api/health` responds -- using `grafana.url` from `config.yaml` if you've set one, otherwise guessing `http://127.0.0.1:3000` and saying so explicitly. On a box where Grafana genuinely isn't installed yet, expect `[INFO]` lines here, not `[FAIL]` -- that's the check correctly telling you what's missing, not something broken.
 
@@ -429,7 +443,7 @@ It also checks Grafana itself, informationally (never blocks the exit code, sinc
 - `config.yaml` contains all mapping rules and filter settings
 - `secrets.yaml` holds all credentials (never committed)
 - Tables are created automatically on first run (`db_schema.py`)
-- Cron automates daily ingestion via `run_collector.sh`: `ingest_findings.py` → `rollup_daily_metrics.py` → `reclassify_product_families.py` → `kev_sync.py` → asset inventory (`crowdstrike_pull_assets.py`, `tenable_pull_assets.py`, `asset_match_hostname.py`)
+- Cron automates daily ingestion via `run_collector.sh`: `kev_sync.py` → `epss_sync.py` → `ingest_findings.py` → `nvd_enrich.py` → `rollup_daily_metrics.py` → `reclassify_product_families.py` → asset inventory (`crowdstrike_pull_assets.py`, `tenable_pull_assets.py`, `asset_match_hostname.py`). The two enrichment catalogs sync first so the same day's rollup reflects current KEV/EPSS data, not yesterday's.
 - `config.py`/`db.py`/`cvss.py`/`sites.py`/`product_classify.py` are shared modules every other script imports from — edit logic there once, not per-script
 - Adding a new vendor: implement `fetch_findings(cfg)` in `vendors/<name>.py` per the contract in `vendors/base.py`, register it in `vendors/ADAPTERS`, add a `sources:` entry in `config.yaml`
 - Power BI reads directly from the PostgreSQL database — see Section 11 for the current report's pages and recommended additions

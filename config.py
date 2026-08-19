@@ -23,7 +23,7 @@ def load_config(path: str = "config.yaml") -> Dict[str, Any]:
         with open(secrets_path, "r") as sf:
             secrets = yaml.safe_load(sf) or {}
 
-        for section in ("tenable", "crowdstrike", "database"):
+        for section in ("tenable", "crowdstrike", "database", "nvd"):
             if section in secrets:
                 cfg.setdefault(section, {})
                 cfg[section].update(secrets[section])
