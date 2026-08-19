@@ -112,24 +112,23 @@ def rollup_sla_metrics(cur, days_last_seen: int) -> List[Dict[str, Any]]:
     cur.execute(
         """
         SELECT
-            site_label,
-            max(site_tag) AS site_tag,
-            initcap(severity) AS risk,
+            vf.site_label,
+            max(vf.site_tag) AS site_tag,
+            initcap(vf.severity) AS risk,
             count(*) AS total_vulns,
             count(*) FILTER (
-                WHERE EXTRACT(EPOCH FROM now() - first_found) / 86400.0 >
-                    CASE severity WHEN 'critical' THEN 2 WHEN 'high' THEN 14 WHEN 'medium' THEN 30 ELSE 60 END
+                WHERE EXTRACT(EPOCH FROM now() - vf.first_found) / 86400.0 > sp.threshold_days
             ) AS sla_breaches,
-            count(*) FILTER (WHERE is_remote_no_auth) AS remote_no_auth_vulns,
+            count(*) FILTER (WHERE vf.is_remote_no_auth) AS remote_no_auth_vulns,
             count(*) FILTER (
-                WHERE is_remote_no_auth AND
-                EXTRACT(EPOCH FROM now() - first_found) / 86400.0 >
-                    CASE severity WHEN 'critical' THEN 2 WHEN 'high' THEN 14 WHEN 'medium' THEN 30 ELSE 60 END
+                WHERE vf.is_remote_no_auth AND
+                EXTRACT(EPOCH FROM now() - vf.first_found) / 86400.0 > sp.threshold_days
             ) AS remote_no_auth_breaches
-        FROM vuln_findings
-        WHERE state IN ('OPEN','REOPENED')
-          AND last_found >= now() - (%(days)s || ' days')::interval
-        GROUP BY site_label, severity
+        FROM vuln_findings vf
+        JOIN sla_policy sp ON sp.severity = vf.severity
+        WHERE vf.state IN ('OPEN','REOPENED')
+          AND vf.last_found >= now() - (%(days)s || ' days')::interval
+        GROUP BY vf.site_label, vf.severity
         """,
         {"days": days_last_seen},
     )
@@ -317,23 +316,23 @@ def rollup_mttr_metrics(cur, snapshot_date: dt.date) -> List[Dict[str, Any]]:
     cur.execute(
         """
         SELECT
-            site_label,
-            max(site_tag) AS site_tag,
-            severity,
+            vf.site_label,
+            max(vf.site_tag) AS site_tag,
+            vf.severity,
             count(*) AS fixed_count,
-            round(avg(EXTRACT(EPOCH FROM last_fixed - first_found) / 86400.0)::numeric, 2) AS avg_remediation_days,
+            round(avg(EXTRACT(EPOCH FROM vf.last_fixed - vf.first_found) / 86400.0)::numeric, 2) AS avg_remediation_days,
             round((percentile_cont(0.5) WITHIN GROUP (
-                ORDER BY EXTRACT(EPOCH FROM last_fixed - first_found) / 86400.0
+                ORDER BY EXTRACT(EPOCH FROM vf.last_fixed - vf.first_found) / 86400.0
             ))::numeric, 2) AS median_remediation_days,
             count(*) FILTER (
-                WHERE EXTRACT(EPOCH FROM last_fixed - first_found) / 86400.0 <=
-                    CASE severity WHEN 'critical' THEN 2 WHEN 'high' THEN 14 WHEN 'medium' THEN 30 ELSE 60 END
+                WHERE EXTRACT(EPOCH FROM vf.last_fixed - vf.first_found) / 86400.0 <= sp.threshold_days
             ) AS sla_compliant_count
-        FROM vuln_findings
-        WHERE state = 'FIXED'
-          AND last_fixed >= %(snap)s::date
-          AND last_fixed <  %(snap)s::date + INTERVAL '1 day'
-        GROUP BY site_label, severity
+        FROM vuln_findings vf
+        JOIN sla_policy sp ON sp.severity = vf.severity
+        WHERE vf.state = 'FIXED'
+          AND vf.last_fixed >= %(snap)s::date
+          AND vf.last_fixed <  %(snap)s::date + INTERVAL '1 day'
+        GROUP BY vf.site_label, vf.severity
         """,
         {"snap": snapshot_date.isoformat()},
     )

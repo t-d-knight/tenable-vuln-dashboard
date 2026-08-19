@@ -10,9 +10,23 @@ asset_inventory schema.
 """
 from typing import Any, Dict
 
+import cvss
 from db import pg_connect
 
 DDL_STATEMENTS = [
+    # SLA policy: single source of truth for the remediation-window CASE
+    # logic that used to be hardcoded (identically, and separately) in this
+    # file's views AND rollup_daily_metrics.py's queries. Synced from
+    # config.yaml's reporting.sla_days by sync_sla_policy() below every
+    # time ensure_schema() runs -- changing it only affects queries run
+    # from that point on, not past daily_sla_metrics/daily_mttr_metrics rows.
+    """
+    CREATE TABLE IF NOT EXISTS sla_policy (
+        severity        TEXT PRIMARY KEY,
+        threshold_days  INTEGER NOT NULL,
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    """,
     # Legacy snapshot tables (previously created by tenable_trend_collector.py
     # and fill_daily_product_metrics.py, now superseded by rollup_daily_metrics.py
     # but kept with their existing shape/types so old Power BI reports don't break).
@@ -187,37 +201,37 @@ DDL_STATEMENTS = [
         PRIMARY KEY (snapshot_date, site_label, severity)
     );
     """,
-    # Power BI fact view: currently-open findings, KEV-enriched. Correlated
-    # subqueries (not a LEFT JOIN) deliberately used to avoid row fanout
-    # when a finding has more than one CVE.
+    # Power BI/Grafana fact view: currently-open findings, KEV-enriched.
+    # A single LEFT JOIN LATERAL computes all KEV columns from one
+    # subquery evaluation per row (same pattern as rollup_kev_metrics()
+    # in rollup_daily_metrics.py, proven at this data volume there) --
+    # the earlier version used five separate correlated subqueries, which
+    # is what was actually timing out Grafana panels at 300k+ open rows
+    # against a 6M+ row vuln_finding_cves table. Avoids row fanout the
+    # same way the old version did (one KEV row picked per finding via
+    # ORDER BY date_added DESC LIMIT 1 inside the LATERAL).
     """
     CREATE OR REPLACE VIEW fact_vuln_findings_current AS
     SELECT
         vf.*,
         EXTRACT(EPOCH FROM now() - vf.first_found) / 86400.0 AS age_days,
-        CASE vf.severity
-            WHEN 'critical' THEN 2 WHEN 'high' THEN 14
-            WHEN 'medium'   THEN 30 ELSE 60
-        END AS sla_threshold_days,
-        (EXTRACT(EPOCH FROM now() - vf.first_found) / 86400.0) >
-            CASE vf.severity
-                WHEN 'critical' THEN 2 WHEN 'high' THEN 14
-                WHEN 'medium'   THEN 30 ELSE 60
-            END AS sla_breach,
-        EXISTS (
-            SELECT 1 FROM vuln_finding_cves fc
-            JOIN cisa_kev k ON k.cve_id = fc.cve
-            WHERE fc.finding_id = vf.id
-        ) AS has_kev,
-        (SELECT k.cve_id FROM vuln_finding_cves fc JOIN cisa_kev k ON k.cve_id = fc.cve
-           WHERE fc.finding_id = vf.id ORDER BY k.date_added DESC LIMIT 1) AS kev_cve_id,
-        (SELECT k.date_added FROM vuln_finding_cves fc JOIN cisa_kev k ON k.cve_id = fc.cve
-           WHERE fc.finding_id = vf.id ORDER BY k.date_added DESC LIMIT 1) AS kev_date_added,
-        (SELECT k.due_date FROM vuln_finding_cves fc JOIN cisa_kev k ON k.cve_id = fc.cve
-           WHERE fc.finding_id = vf.id ORDER BY k.date_added DESC LIMIT 1) AS kev_due_date,
-        (SELECT k.known_ransomware_campaign_use FROM vuln_finding_cves fc JOIN cisa_kev k ON k.cve_id = fc.cve
-           WHERE fc.finding_id = vf.id ORDER BY k.date_added DESC LIMIT 1) AS kev_ransomware_use
+        COALESCE(sp.threshold_days, 60) AS sla_threshold_days,
+        (EXTRACT(EPOCH FROM now() - vf.first_found) / 86400.0) > COALESCE(sp.threshold_days, 60) AS sla_breach,
+        (k.cve_id IS NOT NULL) AS has_kev,
+        k.cve_id AS kev_cve_id,
+        k.date_added AS kev_date_added,
+        k.due_date AS kev_due_date,
+        k.known_ransomware_campaign_use AS kev_ransomware_use
     FROM vuln_findings vf
+    LEFT JOIN sla_policy sp ON sp.severity = vf.severity
+    LEFT JOIN LATERAL (
+        SELECT kk.cve_id, kk.date_added, kk.due_date, kk.known_ransomware_campaign_use
+        FROM vuln_finding_cves fc
+        JOIN cisa_kev kk ON kk.cve_id = fc.cve
+        WHERE fc.finding_id = vf.id
+        ORDER BY kk.date_added DESC
+        LIMIT 1
+    ) k ON TRUE
     WHERE vf.state IN ('OPEN','REOPENED');
     """,
     """
@@ -262,10 +276,35 @@ DDL_STATEMENTS = [
 ]
 
 
+def sync_sla_policy(cur, cfg: Dict[str, Any]) -> None:
+    """
+    Upserts sla_policy from config.yaml's reporting.sla_days (falling back
+    to cvss.DEFAULT_SLA_DAYS for any severity not specified). This is what
+    fact_vuln_findings_current's sla_breach/sla_threshold_days and
+    rollup_daily_metrics.py's SLA/MTTR queries actually read -- change the
+    config value, re-run any script that calls ensure_schema(), and every
+    query from that point on uses the new threshold.
+    """
+    configured = cfg.get("reporting", {}).get("sla_days") or {}
+    thresholds = {**cvss.DEFAULT_SLA_DAYS, **configured}
+    for severity, days in thresholds.items():
+        cur.execute(
+            """
+            INSERT INTO sla_policy (severity, threshold_days, updated_at)
+            VALUES (%s, %s, now())
+            ON CONFLICT (severity) DO UPDATE SET
+                threshold_days = EXCLUDED.threshold_days,
+                updated_at = now();
+            """,
+            (severity, days),
+        )
+
+
 def ensure_schema(cfg: Dict[str, Any]) -> None:
     conn = pg_connect(cfg)
     cur = conn.cursor()
     for stmt in DDL_STATEMENTS:
         cur.execute(stmt)
+    sync_sla_policy(cur, cfg)
     conn.commit()
     conn.close()
