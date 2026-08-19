@@ -1,0 +1,376 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_POSTGRESQL",
+      "label": "PostgreSQL",
+      "description": "Postgres datasource pointing at the tenable_trends database",
+      "type": "datasource",
+      "pluginId": "postgres",
+      "pluginName": "PostgreSQL"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "postgres", "name": "PostgreSQL", "version": "1.0.0" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
+    { "type": "panel", "id": "table", "name": "Table", "version": "" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
+    { "type": "panel", "id": "bargauge", "name": "Bar gauge", "version": "" },
+    { "type": "panel", "id": "row", "name": "Row", "version": "" }
+  ],
+  "id": null,
+  "uid": "vuln-mgmt-core",
+  "title": "Vulnerability Management",
+  "description": "Site/severity trending, SLA compliance, CISA KEV exposure, worst-devices hit list, and MTTR tracking against the vuln_findings core. Companion to Vuln-Analysis-Current.pbix, not a replacement.",
+  "tags": ["vuln-management", "tenable", "kev", "mttr"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "1h",
+  "time": { "from": "now-90d", "to": "now" },
+  "timepicker": { "refresh_intervals": ["1h", "12h", "1d"] },
+  "annotations": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "name": "site",
+        "type": "query",
+        "label": "Site",
+        "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+        "query": "SELECT DISTINCT site_label FROM dim_site ORDER BY site_label",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Executive Summary",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Open Findings",
+      "gridPos": { "x": 0, "y": 1, "w": 6, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT count(*) AS \"Open Findings\" FROM fact_vuln_findings_current WHERE site_label IN ($site)"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Critical + High Open",
+      "gridPos": { "x": 6, "y": 1, "w": 6, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [
+        { "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 25 }
+      ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT count(*) AS \"Critical + High\" FROM fact_vuln_findings_current WHERE site_label IN ($site) AND severity IN ('critical','high')"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "SLA Breach Rate",
+      "gridPos": { "x": 12, "y": 1, "w": 6, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": { "unit": "percent", "color": { "mode": "thresholds" }, "thresholds": { "steps": [
+        { "color": "green", "value": null }, { "color": "orange", "value": 10 }, { "color": "red", "value": 25 }
+      ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT round(100.0 * count(*) FILTER (WHERE sla_breach) / NULLIF(count(*),0), 1) AS \"SLA Breach Rate\" FROM fact_vuln_findings_current WHERE site_label IN ($site)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "% Findings with Active KEV",
+      "gridPos": { "x": 18, "y": 1, "w": 6, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": { "unit": "percent", "color": { "mode": "thresholds" }, "thresholds": { "steps": [
+        { "color": "green", "value": null }, { "color": "orange", "value": 5 }, { "color": "red", "value": 15 }
+      ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT round(100.0 * count(*) FILTER (WHERE has_kev) / NULLIF(count(*),0), 1) AS \"Active KEV %\" FROM fact_vuln_findings_current WHERE site_label IN ($site)"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Open Findings by Severity",
+      "gridPos": { "x": 0, "y": 5, "w": 24, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 20, "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT snapshot_date::timestamp AS time, sum(crit) AS \"Critical\", sum(high) AS \"High\", sum(medium) AS \"Medium\", sum(low) AS \"Low\" FROM daily_site_metrics WHERE site_label IN ($site) AND snapshot_date::date BETWEEN '${__from:date}' AND '${__to:date}' GROUP BY snapshot_date ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 101,
+      "type": "row",
+      "title": "SLA Compliance",
+      "gridPos": { "x": 0, "y": 13, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "SLA Breach by Site & Risk (latest snapshot)",
+      "gridPos": { "x": 0, "y": 14, "w": 12, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT site_label AS \"Site\", risk AS \"Risk\", total_vulns AS \"Total\", sla_breaches AS \"Breaches\", round(100.0 * sla_breaches / NULLIF(total_vulns,0), 1) AS \"Breach Rate %\" FROM daily_sla_metrics WHERE site_label IN ($site) AND snapshot_date = (SELECT max(snapshot_date) FROM daily_sla_metrics) ORDER BY \"Breach Rate %\" DESC"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "SLA Breach Rate Trend by Risk Band",
+      "gridPos": { "x": 12, "y": 14, "w": 12, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT snapshot_date::timestamp AS time, risk AS metric, round(100.0 * sum(sla_breaches) / NULLIF(sum(total_vulns),0), 1) AS value FROM daily_sla_metrics WHERE site_label IN ($site) AND snapshot_date::date BETWEEN '${__from:date}' AND '${__to:date}' GROUP BY snapshot_date, risk ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "type": "row",
+      "title": "CISA KEV Exposure",
+      "gridPos": { "x": 0, "y": 22, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Open KEV Count",
+      "gridPos": { "x": 0, "y": 23, "w": 8, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [
+        { "color": "green", "value": null }, { "color": "red", "value": 1 }
+      ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT sum(kev_open_total) AS \"Open KEV\" FROM daily_kev_metrics WHERE site_label IN ($site) AND snapshot_date = (SELECT max(snapshot_date) FROM daily_kev_metrics)"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Ransomware-Flagged",
+      "gridPos": { "x": 8, "y": 23, "w": 8, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [
+        { "color": "green", "value": null }, { "color": "red", "value": 1 }
+      ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT sum(kev_ransomware_total) AS \"Ransomware-Flagged\" FROM daily_kev_metrics WHERE site_label IN ($site) AND snapshot_date = (SELECT max(snapshot_date) FROM daily_kev_metrics)"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Past-Due (KEV due_date)",
+      "gridPos": { "x": 16, "y": 23, "w": 8, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [
+        { "color": "green", "value": null }, { "color": "red", "value": 1 }
+      ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT sum(kev_past_due_total) AS \"Past Due\" FROM daily_kev_metrics WHERE site_label IN ($site) AND snapshot_date = (SELECT max(snapshot_date) FROM daily_kev_metrics)"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Open KEV Trend",
+      "gridPos": { "x": 0, "y": 27, "w": 24, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT snapshot_date::timestamp AS time, sum(kev_open_total) AS \"Open KEV\", sum(kev_ransomware_total) AS \"Ransomware-Flagged\" FROM daily_kev_metrics WHERE site_label IN ($site) AND snapshot_date::date BETWEEN '${__from:date}' AND '${__to:date}' GROUP BY snapshot_date ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Open KEV Findings (soonest due first)",
+      "gridPos": { "x": 0, "y": 35, "w": 24, "h": 10 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT hostname AS \"Host\", site_label AS \"Site\", severity AS \"Severity\", kev_cve_id AS \"CVE\", kev_due_date AS \"KEV Due\", kev_ransomware_use AS \"Ransomware Use\", round(age_days::numeric,1) AS \"Age (days)\" FROM fact_vuln_findings_current WHERE has_kev AND site_label IN ($site) ORDER BY kev_due_date ASC NULLS LAST LIMIT 100"
+        }
+      ]
+    },
+    {
+      "id": 103,
+      "type": "row",
+      "title": "Worst Devices",
+      "gridPos": { "x": 0, "y": 45, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Worst Devices (by risk score)",
+      "gridPos": { "x": 0, "y": 46, "w": 24, "h": 10 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": {}, "overrides": [
+        { "matcher": { "id": "byName", "options": "Risk Score" }, "properties": [
+          { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+          { "id": "color", "value": { "mode": "continuous-RdYlGr" } }
+        ] }
+      ] },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT hostname AS \"Host\", site_label AS \"Site\", asset_type AS \"Type\", open_critical AS \"Crit\", open_high AS \"High\", open_medium AS \"Med\", open_low AS \"Low\", open_kev_count AS \"KEV\", open_remote_no_auth AS \"Remote/No-Auth\", round(oldest_open_finding_age_days::numeric,1) AS \"Oldest (days)\", risk_score AS \"Risk Score\" FROM asset_risk_summary WHERE site_label IN ($site) ORDER BY risk_score DESC LIMIT 25"
+        }
+      ]
+    },
+    {
+      "id": 104,
+      "type": "row",
+      "title": "MTTR & SLA Tracking",
+      "gridPos": { "x": 0, "y": 56, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Avg Remediation Time by Severity",
+      "gridPos": { "x": 0, "y": 57, "w": 14, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": { "unit": "d" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT snapshot_date::timestamp AS time, severity AS metric, avg(avg_remediation_days) AS value FROM daily_mttr_metrics WHERE site_label IN ($site) AND snapshot_date::date BETWEEN '${__from:date}' AND '${__to:date}' GROUP BY snapshot_date, severity ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "bargauge",
+      "title": "SLA Compliance Rate by Severity (selected period)",
+      "gridPos": { "x": 14, "y": 57, "w": 10, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "steps": [
+        { "color": "red", "value": null }, { "color": "orange", "value": 60 }, { "color": "green", "value": 85 }
+      ] } }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT severity AS \"Severity\", round(100.0 * sum(sla_compliant_count) / NULLIF(sum(fixed_count),0), 1) AS \"SLA Compliance %\" FROM daily_mttr_metrics WHERE site_label IN ($site) AND snapshot_date::date BETWEEN '${__from:date}' AND '${__to:date}' GROUP BY severity ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END"
+        }
+      ]
+    },
+    {
+      "id": 105,
+      "type": "row",
+      "title": "Product / Vendor Drilldown",
+      "gridPos": { "x": 0, "y": 65, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 16,
+      "type": "table",
+      "title": "Top Products by Open Findings (latest snapshot)",
+      "gridPos": { "x": 0, "y": 66, "w": 24, "h": 10 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT product AS \"Product\", vendor AS \"Vendor\", product_family AS \"Family\", sum(open_crit) AS \"Crit\", sum(open_high) AS \"High\", sum(open_medium) AS \"Med\", sum(open_low) AS \"Low\", sum(open_total) AS \"Total\" FROM daily_product_metrics WHERE site_label IN ($site) AND snapshot_date = (SELECT max(snapshot_date) FROM daily_product_metrics) GROUP BY product, vendor, product_family ORDER BY \"Total\" DESC LIMIT 15"
+        }
+      ]
+    }
+  ]
+}

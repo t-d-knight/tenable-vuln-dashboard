@@ -1,45 +1,13 @@
 #!/usr/bin/env python3
 import argparse
-import os
 import re
 from typing import Dict, Optional, Tuple, List, Any
 
 import psycopg2
 import psycopg2.extras
-import yaml
 
-
-# ----------------------------
-# Helpers
-# ----------------------------
-
-def load_config(path: str) -> Dict[str, Any]:
-    with open(path, "r") as f:
-        cfg = yaml.safe_load(f) or {}
-
-    secrets_rel = cfg.get("secrets_file")
-    if secrets_rel:
-        base_dir = os.path.dirname(os.path.abspath(path))
-        secrets_path = os.path.join(base_dir, secrets_rel)
-        with open(secrets_path, "r") as sf:
-            secrets = yaml.safe_load(sf) or {}
-
-        if "database" in secrets:
-            cfg.setdefault("database", {})
-            cfg["database"].update(secrets["database"])
-
-    return cfg
-
-
-def pg_connect(cfg: Dict[str, Any]):
-    db = cfg.get("database", {})
-    return psycopg2.connect(
-        host=db.get("host", "127.0.0.1"),
-        port=db.get("port", 5432),
-        dbname=db.get("name", "tenable_trends"),
-        user=db.get("user", "tenable_trends_user"),
-        password=db.get("password"),
-    )
+from config import load_config
+from db import pg_connect
 
 
 _hostname_junk = re.compile(r"[^a-z0-9\-]+")
@@ -173,24 +141,17 @@ def rehome_foreign_keys(cur, winner_id: int, loser_id: int) -> None:
         """,
         (winner_id, loser_id)
     )
-    # Tenable
+    # Tenable (tn_assets_raw is what tenable_pull_assets.py actually creates/
+    # writes -- this previously pointed at "tenable_assets_raw", a table that
+    # was never created by anything, so this UPDATE was silently a no-op/error)
     cur.execute(
         """
-        UPDATE asset_inventory.tenable_assets_raw
+        UPDATE asset_inventory.tn_assets_raw
         SET unified_asset_id = %s
         WHERE unified_asset_id = %s
         """,
         (winner_id, loser_id)
     )
-    # If you also use tn_assets_raw, uncomment:
-    # cur.execute(
-    #     """
-    #     UPDATE asset_inventory.tn_assets_raw
-    #     SET unified_asset_id = %s
-    #     WHERE unified_asset_id = %s
-    #     """,
-    #     (winner_id, loser_id)
-    # )
     # SCCM
     cur.execute(
         """
@@ -384,8 +345,8 @@ def load_tenable_assets(cur) -> Dict[str, str]:
     """
     cur.execute(
         """
-        SELECT tenable_uuid, COALESCE(hostname, fqdn) AS name
-        FROM asset_inventory.tenable_assets_raw
+        SELECT tn_uuid AS tenable_uuid, COALESCE(hostname, fqdn) AS name
+        FROM asset_inventory.tn_assets_raw
         WHERE COALESCE(hostname, fqdn) IS NOT NULL
         """
     )
@@ -453,7 +414,7 @@ def main():
                         (uid, cs_aid)
                     )
                     cur.execute(
-                        "UPDATE asset_inventory.tenable_assets_raw SET unified_asset_id=%s WHERE tenable_uuid=%s",
+                        "UPDATE asset_inventory.tn_assets_raw SET unified_asset_id=%s WHERE tn_uuid=%s",
                         (uid, tn_uuid)
                     )
 

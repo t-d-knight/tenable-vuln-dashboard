@@ -19,9 +19,10 @@ DB_NAME="tenable_trends"
 DB_USER="tenable_trends_user"
 
 # How long to keep stuff
-RETENTION_DAYS_DB=540       # match your reporting.retention_days
-RETENTION_DAYS_LOGS=30      # app logs
-RETENTION_DAYS_TMP=7        # temp files
+RETENTION_DAYS_DB=540           # match your reporting.retention_days
+RETENTION_DAYS_FINDINGS=180     # match your reporting.findings_retention_days
+RETENTION_DAYS_LOGS=30          # app logs
+RETENTION_DAYS_TMP=7            # temp files
 
 TIMESTAMP="$(date -Iseconds)"
 echo "[$TIMESTAMP] ===== Tenable tracker maintenance start ====="
@@ -30,16 +31,24 @@ echo "[$TIMESTAMP] ===== Tenable tracker maintenance start ====="
 echo "[$TIMESTAMP] Pruning old database rows (>${RETENTION_DAYS_DB} days)…"
 
 psql -U "$DB_USER" -d "$DB_NAME" <<SQL
--- Main product metrics table (we know this exists)
+-- Daily snapshot tables
 DELETE FROM daily_product_metrics
 WHERE snapshot_date::date < CURRENT_DATE - INTERVAL '${RETENTION_DAYS_DB} days';
 
--- If you add other snapshot tables, copy this pattern:
--- DELETE FROM daily_site_metrics
--- WHERE snapshot_date::date < CURRENT_DATE - INTERVAL '${RETENTION_DAYS_DB} days';
---
--- DELETE FROM daily_remote_summary
--- WHERE snapshot_date::date < CURRENT_DATE - INTERVAL '${RETENTION_DAYS_DB} days';
+DELETE FROM daily_site_metrics
+WHERE snapshot_date::date < CURRENT_DATE - INTERVAL '${RETENTION_DAYS_DB} days';
+
+DELETE FROM daily_sla_metrics
+WHERE snapshot_date::date < CURRENT_DATE - INTERVAL '${RETENTION_DAYS_DB} days';
+
+DELETE FROM daily_kev_metrics
+WHERE snapshot_date::date < CURRENT_DATE - INTERVAL '${RETENTION_DAYS_DB} days';
+
+-- vuln_findings: only prune FIXED rows (OPEN/REOPENED rows reflect current
+-- vendor state and are refreshed/replaced by ingest_findings.py, not aged out).
+DELETE FROM vuln_findings
+WHERE state = 'FIXED'
+  AND last_fixed < now() - INTERVAL '${RETENTION_DAYS_FINDINGS} days';
 SQL
 
 # --- 2) Reclassify product families (to keep history clean) ----

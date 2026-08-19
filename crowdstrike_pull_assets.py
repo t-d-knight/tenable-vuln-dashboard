@@ -1,48 +1,18 @@
 #!/usr/bin/env python3
-import os
 import time
-import yaml
 import requests
 import psycopg2
 import psycopg2.extras
 import argparse
-from datetime import datetime
 from typing import Dict, Any
+
+from config import load_config
+from db import pg_connect
 
 # Globals initialised in main()
 CS_BASE_URL = None
 CS_CLIENT_ID = None
 CS_CLIENT_SECRET = None
-PG_CONN = None
-
-
-def load_config(path: str = "config.yaml") -> Dict[str, Any]:
-    with open(path, "r") as f:
-        cfg = yaml.safe_load(f) or {}
-
-    secrets_rel = cfg.get("secrets_file")
-    if secrets_rel:
-        base_dir = os.path.dirname(os.path.abspath(path))
-        secrets_path = os.path.join(base_dir, secrets_rel)
-        if not os.path.isfile(secrets_path):
-            raise FileNotFoundError(f"Secrets file not found: {secrets_path}")
-
-        with open(secrets_path, "r") as sf:
-            secrets = yaml.safe_load(sf) or {}
-
-        if "tenable" in secrets:
-            cfg.setdefault("tenable", {})
-            cfg["tenable"].update(secrets["tenable"])
-
-        if "database" in secrets:
-            cfg.setdefault("database", {})
-            cfg["database"].update(secrets["database"])
-
-        if "crowdstrike" in secrets:
-            cfg.setdefault("crowdstrike", {})
-            cfg["crowdstrike"].update(secrets["crowdstrike"])
-
-    return cfg
 
 
 ############################################################
@@ -217,7 +187,7 @@ def upsert_device(cur, dev: dict) -> None:
 # Main
 ############################################################
 def main():
-    global CS_BASE_URL, CS_CLIENT_ID, CS_CLIENT_SECRET, PG_CONN
+    global CS_BASE_URL, CS_CLIENT_ID, CS_CLIENT_SECRET
 
     parser = argparse.ArgumentParser(
         description="Pull CrowdStrike asset inventory into Postgres"
@@ -237,16 +207,6 @@ def main():
     CS_CLIENT_ID = cs_cfg["client_id"]
     CS_CLIENT_SECRET = cs_cfg["client_secret"]
 
-    # Build Postgres DSN
-    db = cfg["database"]
-    PG_CONN = (
-        f"host={db['host']} "
-        f"port={db.get('port', 5432)} "
-        f"dbname={db['name']} "
-        f"user={db['user']} "
-        f"password={db['password']}"
-    )
-    
     print("[CS] Authenticating...")
     token = cs_auth()
 
@@ -262,7 +222,7 @@ def main():
     devices = cs_get_device_details(token, aids)
     print(f"[CS] Retrieved {len(devices)} records")
 
-    conn = psycopg2.connect(PG_CONN)
+    conn = pg_connect(cfg)
     cur = conn.cursor()
 
     count = 0

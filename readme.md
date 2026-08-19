@@ -1,6 +1,6 @@
-# Tenable Vulnerability Trend Collector
+# Vulnerability Trend Collector
 
-A Python-based collector that pulls filtered vulnerability data from **Tenable Vulnerability Management (Tenable.io)** via the Exports API, enriches it with **asset tags**, classifies by **site**, **severity**, and **remote exploitability**, and stores daily metrics in PostgreSQL for long-term trending and BI dashboards (Power BI / Grafana).
+A Python-based collector that ingests vulnerability data through a vendor-agnostic adapter layer (**Tenable.io** today via the Exports API; the adapter interface in `vendors/` is designed so a future CrowdStrike Falcon Exposure Management or Intune source can plug in without touching the rest of the pipeline), normalizes it into one findings table, enriches it with **CISA Known Exploited Vulnerabilities (KEV)** data, classifies by **site**, **severity**, **product**, and **remote exploitability**, and stores daily metrics in PostgreSQL for long-term trending and BI dashboards (Power BI).
 
 Designed to replace manual CSV exports, pivot-table hell, and one-off reporting.
 
@@ -8,11 +8,14 @@ Designed to replace manual CSV exports, pivot-table hell, and one-off reporting.
 
 ## 1. Features
 
-- **Automated daily ingestion** of Tenable.io vulnerability data via the Exports API.
+- **Vendor-agnostic ingest** (`ingest_findings.py`): each source implements one adapter interface (`vendors/base.py`) and yields normalized findings into `vuln_findings` — the rest of the pipeline (rollups, KEV enrichment, Power BI) doesn't care which vendor a finding came from.
+- **One export per run, not three.** Site/SLA/product classification used to independently re-pull the same Tenable export three separate times; now it's pulled once and everything else derives from the stored result via SQL.
 - **Site-aware reporting** using Tenable tags (e.g., Site A, Site B etc.), with untagged assets grouped into `Ungrouped`.
 - **Severity breakdown**: Critical / High / Medium / Low.
-- **Remote/no-auth exploitability detection** using CVSS vectors (network, low complexity, no privileges).
-- **SLA metrics** per site and risk band (total vs breaches, including remote).
+- **Remote/no-auth exploitability detection** using CVSS vectors (v2, v3, and v4).
+- **SLA metrics** per site and risk band (total vs breaches, including remote), plus a proper **MTTR tracker** (`daily_mttr_metrics`) showing mean/median time-to-remediate and SLA compliance rate of what actually got fixed, broken down by severity.
+- **CISA KEV enrichment** (`kev_sync.py`): flags open findings whose CVE is in the CISA Known Exploited Vulnerabilities catalog, including ransomware-use and past-due-remediation flags.
+- **"Worst devices" hit list** (`asset_risk_summary` view): every asset ranked by a weighted risk score across open severity counts, KEV exposure, and remote/no-auth findings.
 - **PostgreSQL-backed snapshots** with daily snapshots for easy trend charts and KPIs.
 
 ---
@@ -102,6 +105,15 @@ The collector uses `config.yaml` for everything non-secret:
 tenable:
   base_url: "https://cloud.tenable.com"
 
+# Enabled vulnerability data sources. Each "type" must have a matching
+# adapter in vendors/ (see vendors/__init__.py's ADAPTERS registry).
+# Today only "tenable" exists; a future CrowdStrike Falcon Exposure
+# Management or Intune adapter would add another entry here.
+sources:
+  - name: tenable
+    type: tenable
+    enabled: true
+
 reporting:
   days_last_seen: 30
   vuln_published_older_than_days: 30
@@ -109,6 +121,10 @@ reporting:
   # false = flag all network-accessible, no-auth vulns regardless of exploit availability
   require_exploit_for_remote_no_auth: true
   retention_days: 540
+  # How long FIXED-state rows live in vuln_findings before maintenance.sh
+  # prunes them. Separate from retention_days (which governs the daily_*
+  # aggregate snapshot tables).
+  findings_retention_days: 180
 
 sites:
   - key: "BDH-Site"
@@ -139,11 +155,7 @@ secrets_file: "secrets.yaml"
 
 ## 5. Tenable Filters / Logic
 
-Targets active vulnerabilities matching:
-
-- State: `OPEN` or `REOPENED`
-- Severity: Critical / High / Medium / Low
-- Last seen within `days_last_seen`
+`ingest_findings.py` pulls every OPEN/REOPENED/FIXED finding (all severities) into `vuln_findings` — it does not apply the `days_last_seen` staleness bound at fetch time, so nothing is discarded on ingest. That bound is instead applied uniformly, every time, by `rollup_daily_metrics.py` when it computes `daily_site_metrics` / `daily_sla_metrics` / `daily_product_metrics` / `daily_kev_metrics`: an OPEN/REOPENED finding only counts toward those snapshots if it was last seen within `days_last_seen`. The reasoning: an asset that hasn't checked in within that window has usually gone dark for an unrelated reason (decommissioned, offline), not because the finding stopped being real — so trend/SLA reporting excludes it, but the raw record stays in `vuln_findings` for investigation.
 
 Remote/no-auth classification uses CVSS vectors (v2, v3, and v4 all supported):
 
@@ -214,7 +226,33 @@ SLA tracking per site and risk band.
 | remote_no_auth_vulns   | INTEGER |
 | remote_no_auth_breaches| INTEGER |
 
-Tables are created automatically on first run.
+### `vuln_findings`
+
+The normalized, vendor-agnostic core table. One row per (source, source_asset_id, source_rule_id, port, protocol) — every OPEN/REOPENED/FIXED finding a source adapter reports, unfiltered by staleness. Everything else (daily snapshots, KEV enrichment, Power BI views) derives from this table. Key columns: `source`, `state`, `severity`, `cvss_score`/`cvss_vector`, `is_remote_no_auth`, `product_key`/`product_vendor`/`product_family`, `site_label`/`site_tag`/`asset_type`/`hostname`, `first_found`/`last_found`/`last_fixed`.
+
+### `vuln_finding_cves`
+
+CVEs per finding (`finding_id`, `cve`), many-to-many since a finding can map to multiple CVEs.
+
+### `cisa_kev`
+
+CISA Known Exploited Vulnerabilities catalog, synced daily by `kev_sync.py` from the public feed. Keyed by `cve_id`; includes `date_added`, `due_date`, `known_ransomware_campaign_use`.
+
+### `daily_kev_metrics`
+
+Daily KEV exposure per site: open KEV count (by severity), ransomware-flagged count, past-due-date count, non-KEV open count.
+
+### `daily_mttr_metrics`
+
+Daily remediation-time trend, per site and severity, for findings that closed **that day** (not a rolling window): `fixed_count`, `avg_remediation_days`, `median_remediation_days`, `sla_compliant_count`, `sla_compliance_rate`.
+
+### Power BI views
+
+- **`fact_vuln_findings_current`** — every currently open/reopened finding, with `age_days`, `sla_breach`, `has_kev`, `kev_due_date`, `kev_ransomware_use` computed. This is the main fact view for drill-down tables.
+- **`asset_risk_summary`** — one row per asset (the "worst devices" hit list), with open severity counts, KEV/remote-no-auth counts, oldest open finding age, and a weighted `risk_score` for ranking.
+- **`dim_site`**, **`dim_product`** — small lookup dimensions.
+
+Tables are created automatically on first run (`db_schema.py`, called from `ingest_findings.py` / `rollup_daily_metrics.py` / `kev_sync.py`).
 
 ---
 
@@ -245,18 +283,17 @@ Update the `database` section of `config.yaml` and `secrets.yaml` accordingly.
 ```bash
 cd /root/tenable-tracker
 source venv/bin/activate
-python3 tenable_trend_collector.py
+python3 ingest_findings.py --config config.yaml
+python3 rollup_daily_metrics.py --config config.yaml
 ```
 
-**Expected runtime:** On a large Tenable tenant (50k+ assets, 500k+ findings), a full run typically takes 10–30 minutes. The majority of that time is waiting for the Tenable export jobs to complete on their end — the polling loop is normal. `run_collector.sh` chains several scripts, each triggering its own Tenable export, so total wall time can be 30–60 minutes on large environments.
+Or just run the full pipeline via `run_collector.sh` (see Section 10).
 
-### Troubleshooting
+**Expected runtime:** On a large Tenable tenant (50k+ assets, 500k+ findings), a full run typically takes 10–30 minutes. The majority of that time is waiting for the Tenable export job to complete on their end — the polling loop inside `ingest_findings.py` is normal. This is now **one** Tenable export per run (it used to be three separate exports across three scripts for overlapping data), so total wall time should be noticeably shorter than before.
 
-Add `--debug` to dump raw plugin payloads and remote/no-auth classification examples to stdout:
+### Validating before you trust it
 
-```bash
-python3 tenable_trend_collector.py --debug
-```
+`rollup_daily_metrics.py --dry-run` prints the computed rollup for today without writing anything — useful for comparing against known-good numbers before relying on the new pipeline, or for spot-checking after a `product_groups.yaml` rule change.
 
 ---
 
@@ -274,13 +311,88 @@ python3 tenable_trend_collector.py --debug
 2. Get Data → PostgreSQL database
 3. Server: your VM IP
 4. Database: `tenable_trends`
-5. Select `daily_site_metrics` and `daily_sla_metrics`
+5. Import mode (not DirectQuery) — matches the nightly refresh cadence.
+
+### Existing report
+
+The current report (`Vuln-Analysis-Current.pbix`) has two pages, both reading raw columns directly (no DAX measures defined yet):
+
+- **Vuln Management** — KPIs for Remote Critical / Remote High / Total Assets, a stacked area chart of Critical/High/Medium/Low over time (`daily_site_metrics`), a site pivot table, and a product-family pivot table (`daily_product_metrics`), with a site slicer.
+- **Assets** — a small table comparing asset counts across `asset_inventory.cs_assets_raw` and `asset_inventory.tn_assets_raw`.
+
+These keep working unchanged — nothing in this pipeline renamed or restructured `daily_site_metrics`, `daily_product_metrics`, `tn_assets_raw`, or `cs_assets_raw`.
+
+### Recommended additions
+
+Add these as new pages/visuals against the new tables/views, and start defining real DAX measures instead of dragging raw columns:
+
+- **KEV Exposure** — KPI tiles (Open KEV Count, Ransomware-Flagged Count, Past-Due Count) and a trend line from `daily_kev_metrics`; a table of currently open KEV findings from `fact_vuln_findings_current` filtered to `has_kev = TRUE`, sorted by `kev_due_date` ascending.
+- **Worst Devices** — a table against `asset_risk_summary`, sorted by `risk_score` descending (Top N filter for a real "hit list"), with drill-through into `fact_vuln_findings_current` filtered by `source_asset_id`.
+- **MTTR & SLA Tracking** — a trend line of `avg_remediation_days`/`median_remediation_days` from `daily_mttr_metrics`, split by severity, plus `sla_compliance_rate` as a KPI per risk band — this is the direct "are we tracking to our SLAs" view.
+
+Suggested DAX measures (names + plain-language definitions — write these once against `fact_vuln_findings_current` instead of re-dragging raw columns onto every visual):
+
+| Measure | Definition |
+|---|---|
+| Open Findings | `COUNTROWS(fact_vuln_findings_current)` |
+| SLA Breach Rate | Count where `sla_breach = TRUE` ÷ Open Findings |
+| % Findings with Active KEV | Count where `has_kev = TRUE` ÷ Open Findings |
+| Open KEV Count | Count where `has_kev = TRUE` |
+| KEV Past Due | Count where `has_kev = TRUE AND kev_due_date < TODAY()` |
+| Remote/No-Auth Critical Share | Count where `severity = "critical" AND is_remote_no_auth = TRUE` ÷ Open Findings |
+| Ransomware-Associated Open Count | Count where `kev_ransomware_use = "Known"` |
+
+---
+
+## 11a. Grafana (companion dashboard)
+
+`grafana/vuln-dashboard.json` is a dashboard-as-code alternative/companion to the `.pbix` — same underlying views, kept in this repo so it evolves with the schema instead of needing manual rebuilding. It does not replace `Vuln-Analysis-Current.pbix`; both can point at the same database.
+
+Pages (as Grafana rows): Executive Summary, SLA Compliance, CISA KEV Exposure, Worst Devices (the `asset_risk_summary` hit list), MTTR & SLA Tracking, Product/Vendor Drilldown. A `$site` template variable (multi-select, sourced from `dim_site`) filters every panel.
+
+### Installing Grafana (if it isn't already on the box)
+
+```bash
+sudo tee /etc/yum.repos.d/grafana.repo <<EOF
+[grafana]
+name=grafana
+baseurl=https://rpm.grafana.com
+repo_gpgcheck=1
+enabled=1
+gpgcheck=1
+gpgkey=https://rpm.grafana.com/gpg.key
+sslverify=1
+sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+EOF
+
+sudo dnf install -y grafana
+sudo systemctl enable --now grafana-server
+```
+
+Grafana OSS is a core package — the PostgreSQL datasource type ships built in, no extra plugin install needed. Default UI: `http://<host>:3000`, default login `admin`/`admin` (forced change on first login).
+
+### Preflight check
+
+```bash
+python3 grafana/preflight_check.py --config config.yaml
+```
+
+Checks Postgres connectivity, confirms every table/view the dashboard queries exists and has data (not just that `ingest_findings.py` ran once, but that `rollup_daily_metrics.py` and `kev_sync.py` have too), and flags configured sites with no findings yet -- these are hard requirements and it exits non-zero if any are missing.
+
+It also checks Grafana itself, informationally (never blocks the exit code, since the data pipeline doesn't depend on Grafana being up): whether a local `grafana-server` systemd service is active, and whether `/api/health` responds -- using `grafana.url` from `config.yaml` if you've set one, otherwise guessing `http://127.0.0.1:3000` and saying so explicitly. On a box where Grafana genuinely isn't installed yet, expect `[INFO]` lines here, not `[FAIL]` -- that's the check correctly telling you what's missing, not something broken.
+
+**To go live:**
+
+1. `python3 grafana/preflight_check.py --config config.yaml` — fix anything it flags as `[FAIL]`. If Grafana shows as not reachable, install it (above) and re-run.
+2. In Grafana: Connections → Data sources → add a PostgreSQL datasource pointing at the same database as `config.yaml`.
+3. Dashboards → Import → upload `grafana/vuln-dashboard.json` → when prompted for the `DS_POSTGRESQL` input, select the datasource from step 2.
+4. This hasn't been round-tripped through a live Grafana instance during development (no Grafana available to test against) — the SQL and schema are verified, but expect to nudge panel positions/formatting on first import.
 
 ---
 
 ## 12. Maintenance
 
-`maintenance.sh` handles DB pruning, product reclassification, VACUUM, and log rotation. Run it weekly via cron:
+`maintenance.sh` handles DB pruning (`daily_site_metrics`, `daily_sla_metrics`, `daily_kev_metrics`, `daily_product_metrics`, and FIXED-state rows in `vuln_findings` past `findings_retention_days`), product reclassification, VACUUM, and log rotation. Run it weekly via cron:
 
 ```bash
 0 3 * * 0 /root/tenable-tracker/maintenance.sh >> /root/tenable-tracker/logs/maintenance.log 2>&1
@@ -298,7 +410,9 @@ python3 tenable_trend_collector.py --debug
 
 - `config.yaml` contains all mapping rules and filter settings
 - `secrets.yaml` holds all credentials (never committed)
-- Tables are created automatically on first run
-- Cron automates daily ingestion via `run_collector.sh`
-- Power BI reads directly from the PostgreSQL database
+- Tables are created automatically on first run (`db_schema.py`)
+- Cron automates daily ingestion via `run_collector.sh`: `ingest_findings.py` → `rollup_daily_metrics.py` → `reclassify_product_families.py` → `kev_sync.py` → asset inventory (`crowdstrike_pull_assets.py`, `tenable_pull_assets.py`, `asset_match_hostname.py`)
+- `config.py`/`db.py`/`cvss.py`/`sites.py`/`product_classify.py` are shared modules every other script imports from — edit logic there once, not per-script
+- Adding a new vendor: implement `fetch_findings(cfg)` in `vendors/<name>.py` per the contract in `vendors/base.py`, register it in `vendors/ADAPTERS`, add a `sources:` entry in `config.yaml`
+- Power BI reads directly from the PostgreSQL database — see Section 11 for the current report's pages and recommended additions
 - Dependencies: Python 3, `requests`, `pyyaml`, `psycopg2-binary`, PostgreSQL

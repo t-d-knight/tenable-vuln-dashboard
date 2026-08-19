@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 import argparse
 import datetime as dt
-import json
-import os
 import time
 from typing import Dict, Any, Iterable, List
 
 import requests
-import yaml
 
 try:
     import psycopg2
@@ -15,55 +12,8 @@ try:
 except ImportError:
     psycopg2 = None
 
-
-# -------------------------------------------------------------------
-# CONFIG LOADING (same pattern as trend / product scripts)
-# -------------------------------------------------------------------
-
-def load_config(path: str = "config.yaml") -> Dict[str, Any]:
-    """
-    Load main config.yaml, then (optionally) merge in secrets.yaml.
-    """
-    with open(path, "r") as f:
-        cfg = yaml.safe_load(f) or {}
-
-    secrets_rel = cfg.get("secrets_file")
-    if secrets_rel:
-        base_dir = os.path.dirname(os.path.abspath(path))
-        secrets_path = os.path.join(base_dir, secrets_rel)
-        if not os.path.isfile(secrets_path):
-            raise FileNotFoundError(f"Secrets file not found: {secrets_path}")
-
-        with open(secrets_path, "r") as sf:
-            secrets = yaml.safe_load(sf) or {}
-
-        if "tenable" in secrets:
-            cfg.setdefault("tenable", {})
-            cfg["tenable"].update(secrets["tenable"])
-
-        if "database" in secrets:
-            cfg.setdefault("database", {})
-            cfg["database"].update(secrets["database"])
-
-    return cfg
-
-
-# -------------------------------------------------------------------
-# POSTGRES HELPERS
-# -------------------------------------------------------------------
-
-def pg_connect(cfg: Dict[str, Any]):
-    if psycopg2 is None:
-        raise RuntimeError("psycopg2 is not installed in this venv")
-
-    db = cfg.get("database", {})
-    return psycopg2.connect(
-        host=db.get("host", "127.0.0.1"),
-        port=db.get("port", 5432),
-        dbname=db.get("name", "tenable_trends"),
-        user=db.get("user", "tenable_trends_user"),
-        password=db.get("password"),
-    )
+from config import load_config
+from db import pg_connect
 
 
 def init_db(cfg: Dict[str, Any]):

@@ -1,29 +1,10 @@
 #!/usr/bin/env python3
 import psycopg2
 import psycopg2.extras
-import yaml
-import os
 import argparse
-from datetime import datetime
 
-
-############################################################
-# Load config + secrets
-############################################################
-def load_config(path: str):
-    with open(path, "r") as f:
-        cfg = yaml.safe_load(f) or {}
-
-    secrets_path = os.path.join(os.path.dirname(path), cfg.get("secrets_file", "secrets.yaml"))
-    with open(secrets_path, "r") as sf:
-        secrets = yaml.safe_load(sf) or {}
-
-    # merge secrets
-    if "database" in secrets:
-        cfg.setdefault("database", {})
-        cfg["database"].update(secrets["database"])
-
-    return cfg
+from config import load_config
+from db import pg_connect
 
 
 ############################################################
@@ -98,9 +79,9 @@ WITH tn_dedup AS (
     SELECT DISTINCT ON (lower(trim(hostname)))
         hostname,
         lower(trim(hostname)) AS norm_hostname,
-        tenable_uuid,
+        tn_uuid AS tenable_uuid,
         last_seen
-    FROM asset_inventory.tenable_assets_raw
+    FROM asset_inventory.tn_assets_raw
     WHERE hostname IS NOT NULL
       AND hostname <> ''
     ORDER BY lower(trim(hostname)), last_seen DESC
@@ -166,10 +147,7 @@ def main():
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    db = cfg["database"]
-    conn_str = f"host={db['host']} port={db['port']} dbname={db['name']} user={db['user']} password={db['password']}"
-
-    conn = psycopg2.connect(conn_str)
+    conn = pg_connect(cfg)
     cur = conn.cursor()
 
     print("[BACKFILL] Inserting CS-only unified assets…")

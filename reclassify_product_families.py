@@ -12,12 +12,10 @@ Usage:
 import argparse
 from typing import Dict, Any, List, Tuple
 
-from tenable_product_drivers import (
-    load_config,
-    pg_connect,
-    PRODUCT_RULES,
-    classify_product,
-)
+import db_schema
+from config import load_config
+from db import pg_connect
+from product_classify import PRODUCT_RULES, classify_product
 
 
 def get_misc_name() -> str:
@@ -123,6 +121,18 @@ def apply_mapping(conn, mapping: Dict[str, Dict[str, str]], dry_run: bool = Fals
             (vendor, family, product),
         )
 
+        # vuln_findings is the source of truth going forward (daily_product_metrics
+        # is a derived snapshot) -- keep both in sync when rules change.
+        cur.execute(
+            """
+            UPDATE vuln_findings
+            SET product_vendor = %s,
+                product_family = %s
+            WHERE product_key = %s;
+            """,
+            (vendor, family, product),
+        )
+
         # Commit every 100 products to avoid holding a huge transaction
         if idx % 100 == 0 and not dry_run:
             conn.commit()
@@ -156,6 +166,7 @@ def main():
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    db_schema.ensure_schema(cfg)
     conn = pg_connect(cfg)
 
     try:
