@@ -893,13 +893,13 @@
       "panels": []
     },
     {
-      "id": 17,
-      "type": "table",
-      "title": "Current SLA Policy",
+      "id": 208,
+      "type": "stat",
+      "title": "Critical SLA (days)",
       "gridPos": {
         "x": 0,
         "y": 40,
-        "w": 24,
+        "w": 6,
         "h": 3
       },
       "datasource": {
@@ -907,15 +907,152 @@
         "uid": "${DS_POSTGRESQL}"
       },
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          }
+        },
         "overrides": []
       },
-      "options": {},
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
       "targets": [
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT severity AS \"Severity\", threshold_days AS \"SLA (days)\", updated_at AS \"Last Changed\" FROM sla_policy ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END"
+          "rawSql": "SELECT threshold_days AS \"SLA (days)\" FROM sla_policy WHERE severity = 'critical'"
+        }
+      ]
+    },
+    {
+      "id": 209,
+      "type": "stat",
+      "title": "High SLA (days)",
+      "gridPos": {
+        "x": 6,
+        "y": 40,
+        "w": 6,
+        "h": 3
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT threshold_days AS \"SLA (days)\" FROM sla_policy WHERE severity = 'high'"
+        }
+      ]
+    },
+    {
+      "id": 210,
+      "type": "stat",
+      "title": "Medium SLA (days)",
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 6,
+        "h": 3
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "dark-yellow"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT threshold_days AS \"SLA (days)\" FROM sla_policy WHERE severity = 'medium'"
+        }
+      ]
+    },
+    {
+      "id": 211,
+      "type": "stat",
+      "title": "Low SLA (days)",
+      "gridPos": {
+        "x": 18,
+        "y": 40,
+        "w": 6,
+        "h": 3
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT threshold_days AS \"SLA (days)\" FROM sla_policy WHERE severity = 'low'"
         }
       ]
     },
@@ -1260,7 +1397,26 @@
       },
       "fieldConfig": {
         "defaults": {},
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CVE"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "View on NVD",
+                    "url": "https://nvd.nist.gov/vuln/detail/${__value.text}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       "options": {},
       "targets": [
@@ -1409,7 +1565,7 @@
     {
       "id": 205,
       "type": "table",
-      "title": "Likely Next (High EPSS, Not Yet KEV)",
+      "title": "Likely Next (High EPSS, Not Yet KEV) - by CVE",
       "gridPos": {
         "x": 0,
         "y": 86,
@@ -1422,14 +1578,33 @@
       },
       "fieldConfig": {
         "defaults": {},
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CVE"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "View on NVD",
+                    "url": "https://nvd.nist.gov/vuln/detail/${__value.text}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       "options": {},
       "targets": [
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT hostname AS \"Host\", site_label AS \"Site\", severity AS \"Severity\", epss_cve_id AS \"CVE\", round((epss_score*100)::numeric,1) AS \"EPSS %\", round((epss_percentile*100)::numeric,1) AS \"Percentile\", round(age_days::numeric,1) AS \"Age (days)\" FROM fact_vuln_findings_current WHERE site_label IN ($site) AND epss_score >= 0.5 AND NOT has_kev ORDER BY epss_score DESC LIMIT 100"
+          "rawSql": "SELECT epss_cve_id AS \"CVE\", round((epss_score*100)::numeric,1) AS \"EPSS %\", round((epss_percentile*100)::numeric,1) AS \"Percentile\", count(*) AS \"Findings\", count(DISTINCT source_asset_id) AS \"Assets\", count(DISTINCT site_label) AS \"Sites\", count(*) FILTER (WHERE severity='critical') AS \"Crit\", count(*) FILTER (WHERE severity='high') AS \"High\", count(*) FILTER (WHERE severity='medium') AS \"Med\", count(*) FILTER (WHERE severity='low') AS \"Low\", round(max(age_days)::numeric,1) AS \"Oldest (days)\" FROM fact_vuln_findings_current WHERE site_label IN ($site) AND epss_score >= 0.5 AND NOT has_kev GROUP BY epss_cve_id, epss_score, epss_percentile ORDER BY epss_score DESC, \"Assets\" DESC LIMIT 100"
         }
       ]
     },
