@@ -262,7 +262,8 @@ DDL_STATEMENTS = [
         k.due_date AS kev_due_date,
         k.known_ransomware_campaign_use AS kev_ransomware_use,
         e.epss AS epss_score,
-        e.percentile AS epss_percentile
+        e.percentile AS epss_percentile,
+        e.cve_id AS epss_cve_id
     FROM vuln_findings vf
     LEFT JOIN sla_policy sp ON sp.severity = vf.severity
     LEFT JOIN LATERAL (
@@ -274,7 +275,7 @@ DDL_STATEMENTS = [
         LIMIT 1
     ) k ON TRUE
     LEFT JOIN LATERAL (
-        SELECT es.epss, es.percentile
+        SELECT es.epss, es.percentile, fc2.cve AS cve_id
         FROM vuln_finding_cves fc2
         JOIN epss_scores es ON es.cve_id = fc2.cve
         WHERE fc2.finding_id = vf.id
@@ -321,6 +322,61 @@ DDL_STATEMENTS = [
           + (count(*) FILTER (WHERE is_remote_no_auth) * 5) AS risk_score
     FROM fact_vuln_findings_current
     GROUP BY source_asset_id;
+    """,
+    # "Top patches to deploy": groups open findings by (source, source_rule_id)
+    # -- for Tenable this IS effectively "one patch/update check," so this
+    # answers "if I deploy this one fix, how many findings across how many
+    # assets does it close, and how urgent is that group." This assumption
+    # is Tenable-plugin-shaped and won't automatically generalize to a
+    # future source whose own "rule" concept may not map 1:1 to a single
+    # deployable patch -- revisit once a second source has real data.
+    # plugin_metadata is presently Tenable-only, hence the source filter.
+    """
+    CREATE OR REPLACE VIEW patch_impact_summary AS
+    SELECT
+        vf.source,
+        vf.source_rule_id,
+        max(pm.plugin_name) AS title,
+        max(pm.solution) AS solution,
+        max(pm.product_family) AS product_family,
+        count(*) AS open_findings,
+        count(DISTINCT vf.source_asset_id) AS affected_assets,
+        count(*) FILTER (WHERE vf.severity = 'critical') AS crit,
+        count(*) FILTER (WHERE vf.severity = 'high') AS high,
+        count(*) FILTER (WHERE vf.severity = 'medium') AS medium,
+        count(*) FILTER (WHERE vf.severity = 'low') AS low,
+        count(*) FILTER (WHERE vf.is_remote_no_auth) AS remote_no_auth_count,
+        bool_or(k.cve_id IS NOT NULL) AS has_kev,
+        max(e.epss) AS max_epss,
+        (
+            count(DISTINCT vf.source_asset_id)
+            + (count(*) FILTER (WHERE vf.severity = 'critical') * 5)
+            + (count(*) FILTER (WHERE vf.severity = 'high') * 2)
+            + (count(*) FILTER (WHERE vf.is_remote_no_auth) * 3)
+            + (CASE WHEN bool_or(k.cve_id IS NOT NULL)
+                    THEN count(DISTINCT vf.source_asset_id) * 5 ELSE 0 END)
+            + ROUND(COALESCE(max(e.epss), 0) * count(DISTINCT vf.source_asset_id) * 2)
+        )::int AS priority_score
+    FROM vuln_findings vf
+    LEFT JOIN plugin_metadata pm
+        ON vf.source = 'tenable' AND pm.plugin_id = vf.source_rule_id::bigint
+    LEFT JOIN LATERAL (
+        SELECT k.cve_id
+        FROM vuln_finding_cves fc
+        JOIN cisa_kev k ON k.cve_id = fc.cve
+        WHERE fc.finding_id = vf.id
+        LIMIT 1
+    ) k ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT es.epss
+        FROM vuln_finding_cves fc2
+        JOIN epss_scores es ON es.cve_id = fc2.cve
+        WHERE fc2.finding_id = vf.id
+        ORDER BY es.epss DESC
+        LIMIT 1
+    ) e ON TRUE
+    WHERE vf.state IN ('OPEN','REOPENED')
+    GROUP BY vf.source, vf.source_rule_id;
     """,
 ]
 

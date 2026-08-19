@@ -270,8 +270,9 @@ Daily EPSS exposure per site: average/max EPSS among open findings, count above 
 
 ### Power BI views
 
-- **`fact_vuln_findings_current`** — every currently open/reopened finding, with `age_days`, `sla_breach`, `has_kev`, `kev_due_date`, `kev_ransomware_use`, `epss_score`, `epss_percentile` computed. This is the main fact view for drill-down tables.
+- **`fact_vuln_findings_current`** — every currently open/reopened finding, with `age_days`, `sla_breach`, `has_kev`, `kev_due_date`, `kev_ransomware_use`, `epss_score`, `epss_percentile`, `epss_cve_id` computed. This is the main fact view for drill-down tables.
 - **`asset_risk_summary`** — one row per asset (the "worst devices" hit list), with open severity counts, KEV/remote-no-auth counts, oldest open finding age, and a weighted `risk_score` for ranking.
+- **`patch_impact_summary`** — one row per (source, source_rule_id) -- for Tenable that's effectively one patch/update check -- with affected-asset count, severity breakdown, KEV/EPSS exposure, and a weighted `priority_score`. Answers "which single fix closes the most, worst risk," not just which has the most findings. This grouping is Tenable-plugin-shaped; a future source's own "rule" concept may not map 1:1 to a single deployable patch the same way, so revisit once a second source has real data.
 - **`dim_site`**, **`dim_product`** — small lookup dimensions.
 
 Tables are created automatically on first run (`db_schema.py`, called from `ingest_findings.py` / `rollup_daily_metrics.py` / `kev_sync.py` / `epss_sync.py` / `nvd_enrich.py` / `reclassify_product_families.py`).
@@ -378,7 +379,9 @@ Suggested DAX measures (names + plain-language definitions — write these once 
 
 `grafana/vuln-dashboard.json` is a dashboard-as-code alternative/companion to the `.pbix` — same underlying views, kept in this repo so it evolves with the schema instead of needing manual rebuilding. It does not replace `Vuln-Analysis-Current.pbix`; both can point at the same database.
 
-Pages (as Grafana rows): Executive Summary (headline KPIs, a "Remote + No-Auth Critical/High" KPI and trend — the actually-exploitable-right-now subset, since raw severity counts alone undersell how much of that risk is remotely reachable with no credentials — and a daily "Vulns Remediated" panel alongside the open-findings trend), Trend (7-Day Change) (delta stats vs. 7 days ago on the headline KPIs, colored red/green by whether it's moving the wrong or right way), SLA Compliance, CISA KEV Exposure, Worst Devices (the `asset_risk_summary` hit list), MTTR & SLA Tracking, Product/Vendor Drilldown. A `$site` template variable (multi-select, sourced from `dim_site`) filters every panel.
+A markdown panel at the very top explains severity coloring, SLA breach, KEV, EPSS, Risk Score, and Priority Score in plain language -- so a viewer unfamiliar with the methodology doesn't have to come ask what a number means.
+
+Pages (as Grafana rows): Executive Summary (headline KPIs, a "Remote + No-Auth Critical/High" KPI and trend — the actually-exploitable-right-now subset, since raw severity counts alone undersell how much of that risk is remotely reachable with no credentials — and a daily "Vulns Remediated" panel alongside the open-findings trend), Trend (7-Day Change) (delta stats vs. 7 days ago on the headline KPIs, colored red/green by whether it's moving the wrong or right way), SLA Compliance, CISA KEV Exposure, Predictive Risk (EPSS) (a "Likely Next" watchlist of high-EPSS findings not yet KEV-listed, an EPSS trend, and NVD backfill coverage), Worst Devices (the `asset_risk_summary` hit list), Top Patches to Deploy (the `patch_impact_summary` ranking -- "which single fix closes the most, worst risk"), MTTR & SLA Tracking, Product/Vendor Drilldown. A `$site` template variable (multi-select, sourced from `dim_site`) filters every panel except Top Patches to Deploy, which is intentionally org-wide.
 
 Severity is colored consistently everywhere it appears as a category (Critical/High/Medium/Low breakdowns) as a red → orange → amber → yellow ramp, deliberately avoiding green — even "Low" severity findings aren't good news, so nothing in the severity scale should read as green. Green is reserved for genuinely positive signals: the 7-day trend deltas when a metric is improving, and daily remediation counts.
 

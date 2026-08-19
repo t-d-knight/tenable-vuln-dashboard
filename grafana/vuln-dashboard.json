@@ -107,12 +107,31 @@
   },
   "panels": [
     {
+      "id": 200,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 7
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### How to read this dashboard\n\n**Severity** is colored red (Critical) to orange (High) to amber (Medium) to yellow (Low) everywhere it appears as a category -- deliberately no green, since even a Low-severity finding is not good news. Green is reserved for genuinely positive signals: improving trend deltas and daily remediation counts.\n\n**SLA Breach** -- a finding is a breach once its age (from first detected) exceeds its severity's threshold. Current thresholds are shown in the \"Current SLA Policy\" panel below -- these can change over time, so check that panel rather than assuming.\n\n**CISA KEV** -- Known Exploited Vulnerabilities. CISA has *confirmed* this CVE is being actively exploited in the wild right now. Binary, reactive, and the single highest-priority signal here.\n\n**EPSS** -- Exploit Prediction Scoring System (FIRST.org). A daily-updated probability (0-100%) a CVE will be exploited in the wild in the next 30 days. Predictive rather than confirmed -- the complement to KEV, not a replacement for it. \"High EPSS, not yet KEV\" findings are the ones most likely to become KEV-listed soon.\n\n**Risk Score** (Worst Devices) -- a weighted composite per asset: severity counts plus a KEV bonus plus a remote/no-auth bonus. Higher is worse. A relative ranking tool, not an absolute unit.\n\n**Priority Score** (Top Patches to Deploy) -- a weighted composite per patch/plugin: affected-asset count plus severity plus remote/no-auth plus KEV plus EPSS. Answers \"which single fix closes the most, worst risk\" -- not the same thing as raw finding count alone.\n\n**Remote + No-Auth** -- exploitable over the network with no credentials required (CVSS Attack Vector: Network/Adjacent, Privileges Required: None). The subset of Critical/High findings actually reachable by an attacker starting from zero access."
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
       "id": 100,
       "type": "row",
       "title": "Executive Summary",
       "gridPos": {
         "x": 0,
-        "y": 0,
+        "y": 7,
         "w": 24,
         "h": 1
       },
@@ -125,7 +144,7 @@
       "title": "Open Findings",
       "gridPos": {
         "x": 0,
-        "y": 1,
+        "y": 8,
         "w": 6,
         "h": 4
       },
@@ -162,7 +181,7 @@
       "title": "Critical + High Open",
       "gridPos": {
         "x": 6,
-        "y": 1,
+        "y": 8,
         "w": 6,
         "h": 4
       },
@@ -218,7 +237,7 @@
       "title": "SLA Breach Rate",
       "gridPos": {
         "x": 12,
-        "y": 1,
+        "y": 8,
         "w": 6,
         "h": 4
       },
@@ -274,7 +293,7 @@
       "title": "% Findings with Active KEV",
       "gridPos": {
         "x": 18,
-        "y": 1,
+        "y": 8,
         "w": 6,
         "h": 4
       },
@@ -330,7 +349,7 @@
       "title": "Remote + No-Auth Crit/High Open",
       "gridPos": {
         "x": 0,
-        "y": 5,
+        "y": 12,
         "w": 6,
         "h": 8
       },
@@ -386,7 +405,7 @@
       "title": "Remote + No-Auth Crit/High Trend",
       "gridPos": {
         "x": 6,
-        "y": 5,
+        "y": 12,
         "w": 18,
         "h": 8
       },
@@ -454,7 +473,7 @@
       "title": "Open Findings by Severity",
       "gridPos": {
         "x": 0,
-        "y": 13,
+        "y": 20,
         "w": 24,
         "h": 8
       },
@@ -555,7 +574,7 @@
       "title": "Vulns Remediated per Day",
       "gridPos": {
         "x": 0,
-        "y": 21,
+        "y": 28,
         "w": 24,
         "h": 6
       },
@@ -597,7 +616,7 @@
       "title": "Trend (7-Day Change)",
       "gridPos": {
         "x": 0,
-        "y": 27,
+        "y": 34,
         "w": 24,
         "h": 1
       },
@@ -610,7 +629,7 @@
       "title": "Open Findings \u0394 (7d)",
       "gridPos": {
         "x": 0,
-        "y": 28,
+        "y": 35,
         "w": 6,
         "h": 4
       },
@@ -674,7 +693,7 @@
       "title": "Crit + High \u0394 (7d)",
       "gridPos": {
         "x": 6,
-        "y": 28,
+        "y": 35,
         "w": 6,
         "h": 4
       },
@@ -738,7 +757,7 @@
       "title": "SLA Breach Rate \u0394 (7d, pts)",
       "gridPos": {
         "x": 12,
-        "y": 28,
+        "y": 35,
         "w": 6,
         "h": 4
       },
@@ -802,7 +821,7 @@
       "title": "Active KEV % \u0394 (7d, pts)",
       "gridPos": {
         "x": 18,
-        "y": 28,
+        "y": 35,
         "w": 6,
         "h": 4
       },
@@ -866,7 +885,7 @@
       "title": "SLA Compliance",
       "gridPos": {
         "x": 0,
-        "y": 32,
+        "y": 39,
         "w": 24,
         "h": 1
       },
@@ -879,7 +898,7 @@
       "title": "Current SLA Policy",
       "gridPos": {
         "x": 0,
-        "y": 33,
+        "y": 40,
         "w": 24,
         "h": 3
       },
@@ -906,7 +925,7 @@
       "title": "SLA Breach by Site & Risk (latest snapshot)",
       "gridPos": {
         "x": 0,
-        "y": 36,
+        "y": 43,
         "w": 12,
         "h": 8
       },
@@ -933,7 +952,7 @@
       "title": "SLA Breach Rate Trend by Risk Band",
       "gridPos": {
         "x": 12,
-        "y": 36,
+        "y": 43,
         "w": 12,
         "h": 8
       },
@@ -1028,7 +1047,7 @@
       "title": "CISA KEV Exposure",
       "gridPos": {
         "x": 0,
-        "y": 44,
+        "y": 51,
         "w": 24,
         "h": 1
       },
@@ -1041,7 +1060,7 @@
       "title": "Open KEV Count",
       "gridPos": {
         "x": 0,
-        "y": 45,
+        "y": 52,
         "w": 8,
         "h": 4
       },
@@ -1093,7 +1112,7 @@
       "title": "Ransomware-Flagged",
       "gridPos": {
         "x": 8,
-        "y": 45,
+        "y": 52,
         "w": 8,
         "h": 4
       },
@@ -1145,7 +1164,7 @@
       "title": "Past-Due (KEV due_date)",
       "gridPos": {
         "x": 16,
-        "y": 45,
+        "y": 52,
         "w": 8,
         "h": 4
       },
@@ -1197,7 +1216,7 @@
       "title": "Open KEV Trend",
       "gridPos": {
         "x": 0,
-        "y": 49,
+        "y": 56,
         "w": 24,
         "h": 8
       },
@@ -1231,7 +1250,7 @@
       "title": "Open KEV Findings (soonest due first)",
       "gridPos": {
         "x": 0,
-        "y": 57,
+        "y": 64,
         "w": 24,
         "h": 10
       },
@@ -1253,12 +1272,174 @@
       ]
     },
     {
+      "id": 201,
+      "type": "row",
+      "title": "Predictive Risk (EPSS)",
+      "gridPos": {
+        "x": 0,
+        "y": 74,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 202,
+      "type": "stat",
+      "title": "High-EPSS, Not-Yet-KEV",
+      "gridPos": {
+        "x": 0,
+        "y": 75,
+        "w": 6,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 25
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT sum(high_epss_non_kev_total) AS \"High-EPSS Not Yet KEV\" FROM daily_epss_metrics WHERE site_label IN ($site) AND snapshot_date = (SELECT max(snapshot_date) FROM daily_epss_metrics)"
+        }
+      ]
+    },
+    {
+      "id": 203,
+      "type": "timeseries",
+      "title": "Avg / Max EPSS Trend",
+      "gridPos": {
+        "x": 6,
+        "y": 75,
+        "w": 18,
+        "h": 8
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "max": 1,
+          "min": 0,
+          "custom": {
+            "fillOpacity": 15
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT snapshot_date::timestamp AS time, avg(avg_epss) AS \"Avg EPSS\", max(max_epss) AS \"Max EPSS\" FROM daily_epss_metrics WHERE site_label IN ($site) AND snapshot_date::date BETWEEN '${__from:date}' AND '${__to:date}' GROUP BY snapshot_date ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 204,
+      "type": "table",
+      "title": "NVD Enrichment Coverage",
+      "gridPos": {
+        "x": 0,
+        "y": 83,
+        "w": 24,
+        "h": 3
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "WITH cve_findings AS (\n  SELECT vf.id, vf.cvss_vector FROM vuln_findings vf\n  WHERE vf.state IN ('OPEN','REOPENED')\n    AND EXISTS (SELECT 1 FROM vuln_finding_cves fc WHERE fc.finding_id = vf.id)\n)\nSELECT\n  count(*) AS \"CVE-Backed Open Findings\",\n  count(*) FILTER (WHERE cvss_vector IS NOT NULL) AS \"With CVSS Vector\",\n  count(*) FILTER (WHERE cvss_vector IS NULL) AS \"Missing Vector\",\n  (SELECT count(*) FROM nvd_cvss_cache WHERE found) AS \"NVD: CVEs Found\",\n  (SELECT count(*) FROM nvd_cvss_cache WHERE NOT found) AS \"NVD: Not Yet Scored\"\nFROM cve_findings;"
+        }
+      ]
+    },
+    {
+      "id": 205,
+      "type": "table",
+      "title": "Likely Next (High EPSS, Not Yet KEV)",
+      "gridPos": {
+        "x": 0,
+        "y": 86,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT hostname AS \"Host\", site_label AS \"Site\", severity AS \"Severity\", epss_cve_id AS \"CVE\", round((epss_score*100)::numeric,1) AS \"EPSS %\", round((epss_percentile*100)::numeric,1) AS \"Percentile\", round(age_days::numeric,1) AS \"Age (days)\" FROM fact_vuln_findings_current WHERE site_label IN ($site) AND epss_score >= 0.5 AND NOT has_kev ORDER BY epss_score DESC LIMIT 100"
+        }
+      ]
+    },
+    {
       "id": 103,
       "type": "row",
       "title": "Worst Devices",
       "gridPos": {
         "x": 0,
-        "y": 67,
+        "y": 96,
         "w": 24,
         "h": 1
       },
@@ -1271,7 +1452,7 @@
       "title": "Worst Devices (by risk score)",
       "gridPos": {
         "x": 0,
-        "y": 68,
+        "y": 97,
         "w": 24,
         "h": 10
       },
@@ -1314,12 +1495,73 @@
       ]
     },
     {
+      "id": 206,
+      "type": "row",
+      "title": "Top Patches to Deploy",
+      "gridPos": {
+        "x": 0,
+        "y": 107,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 207,
+      "type": "table",
+      "title": "Top 10 Patches to Deploy (org-wide, not filtered by $site)",
+      "gridPos": {
+        "x": 0,
+        "y": 108,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Priority"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "continuous-GrYlRd"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT title AS \"Patch / Check\", product_family AS \"Product Family\", affected_assets AS \"Assets\", open_findings AS \"Findings\", crit AS \"Crit\", high AS \"High\", medium AS \"Med\", low AS \"Low\", remote_no_auth_count AS \"Remote/No-Auth\", CASE WHEN has_kev THEN 'Yes' ELSE 'No' END AS \"KEV\", round((COALESCE(max_epss,0)*100)::numeric,1) AS \"Max EPSS %\", priority_score AS \"Priority\" FROM patch_impact_summary ORDER BY priority_score DESC LIMIT 10"
+        }
+      ]
+    },
+    {
       "id": 104,
       "type": "row",
       "title": "MTTR & SLA Tracking",
       "gridPos": {
         "x": 0,
-        "y": 78,
+        "y": 118,
         "w": 24,
         "h": 1
       },
@@ -1332,7 +1574,7 @@
       "title": "Avg Remediation Time by Severity",
       "gridPos": {
         "x": 0,
-        "y": 79,
+        "y": 119,
         "w": 14,
         "h": 8
       },
@@ -1427,7 +1669,7 @@
       "title": "SLA Compliance Rate by Severity (selected period)",
       "gridPos": {
         "x": 14,
-        "y": 79,
+        "y": 119,
         "w": 10,
         "h": 8
       },
@@ -1483,7 +1725,7 @@
       "title": "Product / Vendor Drilldown",
       "gridPos": {
         "x": 0,
-        "y": 87,
+        "y": 127,
         "w": 24,
         "h": 1
       },
@@ -1496,7 +1738,7 @@
       "title": "Top Products by Open Findings (latest snapshot)",
       "gridPos": {
         "x": 0,
-        "y": 88,
+        "y": 128,
         "w": 24,
         "h": 10
       },
