@@ -1,0 +1,15 @@
+# Force LF line endings regardless of the checking-out machine's git
+# config or OS. Shell scripts break outright with CRLF (bad interpreter
+# errors from a shebang line ending in \r); Python doesn't break but it's
+# not worth the inconsistency either.
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.py text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+
+*.pbix binary
+*.sqlite binary

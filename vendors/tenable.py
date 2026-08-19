@@ -191,13 +191,30 @@ def _get_cvss_score(plugin: Dict[str, Any]) -> Optional[float]:
     return None
 
 
-def _epoch_to_dt(epoch: Any) -> Optional[dt.datetime]:
-    if epoch is None:
+def _epoch_to_dt(value: Any) -> Optional[dt.datetime]:
+    """
+    Tenable has returned timestamps as either epoch integers or ISO8601
+    strings depending on API version/tenant -- accept both rather than
+    silently failing on whichever one we didn't guess.
+    """
+    if value is None:
         return None
     try:
-        return dt.datetime.fromtimestamp(int(epoch), tz=dt.timezone.utc)
+        return dt.datetime.fromtimestamp(int(value), tz=dt.timezone.utc)
     except (TypeError, ValueError):
-        return None
+        pass
+    if isinstance(value, str):
+        try:
+            s = value.strip()
+            if s.endswith("Z"):
+                s = s[:-1] + "+00:00"
+            parsed = dt.datetime.fromisoformat(s)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=dt.timezone.utc)
+            return parsed
+        except ValueError:
+            return None
+    return None
 
 
 def _extract_cves(plugin: Dict[str, Any]) -> List[str]:
@@ -269,16 +286,31 @@ def fetch_findings(
 
     total_seen = 0
     total_kept = 0
+    dropped_no_rule_id = 0
+    dropped_no_severity = 0
+    first_dropped_sample: Optional[Dict[str, Any]] = None
 
     for f in iter_chunks(sess, uuid, chunks):
         total_seen += 1
 
         plugin = f.get("plugin", {}) or {}
 
-        try:
-            pid = int(plugin.get("id") or plugin.get("plugin_id"))
-        except (TypeError, ValueError):
+        # Plugin/rule id: used as the finding's dedup key (kept as a string,
+        # so it doesn't need to be numeric) and, separately, as the plugin
+        # catalog's dict key (needs int -- see pid_int below). A finding
+        # with no rule id at all can't be identified, so it's the one
+        # thing that's still a hard drop.
+        rule_id_raw = plugin.get("id") or plugin.get("plugin_id") or f.get("plugin_id")
+        if rule_id_raw is None:
+            dropped_no_rule_id += 1
+            if first_dropped_sample is None:
+                first_dropped_sample = f
             continue
+
+        try:
+            pid_int: Optional[int] = int(rule_id_raw)
+        except (TypeError, ValueError):
+            pid_int = None
 
         score = _get_cvss_score(plugin)
         vector = _get_cvss_vector_string(plugin)
@@ -288,6 +320,9 @@ def fetch_findings(
                 f.get("severity") if f.get("severity") is not None else f.get("severity_id")
             )
         if not severity:
+            dropped_no_severity += 1
+            if first_dropped_sample is None:
+                first_dropped_sample = f
             continue
 
         asset = f.get("asset", {}) or {}
@@ -313,8 +348,11 @@ def fetch_findings(
         last_found = _epoch_to_dt(f.get("last_found") or f.get("last_seen")) or first_found
         if first_found is None:
             first_found = last_found
-        if first_found is None or last_found is None:
-            continue
+        now = dt.datetime.now(dt.timezone.utc)
+        if last_found is None:
+            last_found = now
+        if first_found is None:
+            first_found = last_found or now
 
         last_fixed = None
         if state == "FIXED":
@@ -326,7 +364,7 @@ def fetch_findings(
         nf = NormalizedFinding(
             source="tenable",
             source_asset_id=str(sid) if sid else "unknown",
-            source_rule_id=str(pid),
+            source_rule_id=str(rule_id_raw),
             state=state,
             severity=severity,
             first_found=first_found,
@@ -357,28 +395,40 @@ def fetch_findings(
         findings.append(nf)
         total_kept += 1
 
-        plugin_meta.setdefault(pid, {
-            "plugin_id": pid,
-            "plugin_name": plugin.get("name"),
-            "plugin_family": plugin.get("family"),
-            "plugin_type": plugin.get("type"),
-            "vendor": cls.get("vendor"),
-            "product": product_key,
-            "product_family": cls.get("family"),
-            "synopsis": plugin.get("synopsis"),
-            "description": plugin.get("description"),
-            "solution": plugin.get("solution"),
-            "see_also": plugin.get("see_also"),
-            "cvss3_base": plugin.get("cvss3_base_score"),
-            "cvss3_vector": plugin.get("cvss3_vector"),
-            "exploit_available": plugin.get("exploit_available"),
-            "exploited_by_malware": plugin.get("exploited_by_malware"),
-            "has_patch": bool(plugin.get("patch_publication_date")),
-            "patch_published": plugin.get("patch_publication_date"),
-        })
-        if cves:
-            plugin_cves.setdefault(pid, set()).update(cves)
+        # Plugin catalog side-channel is best-effort: skip it (not the
+        # whole finding) if this particular rule id isn't numeric.
+        if pid_int is not None:
+            plugin_meta.setdefault(pid_int, {
+                "plugin_id": pid_int,
+                "plugin_name": plugin.get("name"),
+                "plugin_family": plugin.get("family"),
+                "plugin_type": plugin.get("type"),
+                "vendor": cls.get("vendor"),
+                "product": product_key,
+                "product_family": cls.get("family"),
+                "synopsis": plugin.get("synopsis"),
+                "description": plugin.get("description"),
+                "solution": plugin.get("solution"),
+                "see_also": plugin.get("see_also"),
+                "cvss3_base": plugin.get("cvss3_base_score"),
+                "cvss3_vector": plugin.get("cvss3_vector"),
+                "exploit_available": plugin.get("exploit_available"),
+                "exploited_by_malware": plugin.get("exploited_by_malware"),
+                "has_patch": bool(plugin.get("patch_publication_date")),
+                "patch_published": plugin.get("patch_publication_date"),
+            })
+            if cves:
+                plugin_cves.setdefault(pid_int, set()).update(cves)
 
-    print(f"[tenable] Findings processed: {total_seen}, kept (classified): {total_kept}")
+    print(
+        f"[tenable] Findings processed: {total_seen}, kept: {total_kept}, "
+        f"dropped (no rule id): {dropped_no_rule_id}, "
+        f"dropped (no severity): {dropped_no_severity}"
+    )
+
+    if total_seen > 0 and total_kept == 0 and first_dropped_sample is not None:
+        print("[tenable] WARNING: 0 findings kept out of a non-empty export. "
+              "Dumping the first dropped finding's raw JSON for troubleshooting:")
+        print(json.dumps(first_dropped_sample, indent=2, default=str)[:4000])
 
     return findings, plugin_meta, plugin_cves
