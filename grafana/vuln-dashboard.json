@@ -1384,7 +1384,7 @@
     {
       "id": 12,
       "type": "table",
-      "title": "Open KEV Findings (soonest due first)",
+      "title": "Open KEV Findings (by CVE, soonest due first)",
       "gridPos": {
         "x": 0,
         "y": 64,
@@ -1415,6 +1415,49 @@
                 ]
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CVSS"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "steps": [
+                    {
+                      "color": "yellow",
+                      "value": null
+                    },
+                    {
+                      "color": "dark-yellow",
+                      "value": 4
+                    },
+                    {
+                      "color": "orange",
+                      "value": 7
+                    },
+                    {
+                      "color": "red",
+                      "value": 9
+                    }
+                  ]
+                }
+              }
+            ]
           }
         ]
       },
@@ -1423,7 +1466,7 @@
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT hostname AS \"Host\", site_label AS \"Site\", severity AS \"Severity\", kev_cve_id AS \"CVE\", kev_due_date AS \"KEV Due\", kev_ransomware_use AS \"Ransomware Use\", round(age_days::numeric,1) AS \"Age (days)\" FROM fact_vuln_findings_current WHERE has_kev AND site_label IN ($site) ORDER BY kev_due_date ASC NULLS LAST LIMIT 100"
+          "rawSql": "SELECT kev_cve_id AS \"CVE\", round(max(cvss_score)::numeric,1) AS \"CVSS\", max(kev_due_date) AS \"KEV Due\", max(kev_ransomware_use) AS \"Ransomware Use\", count(*) AS \"Findings\", count(DISTINCT source_asset_id) AS \"Assets\", count(DISTINCT site_label) AS \"Sites\", count(*) FILTER (WHERE severity='critical') AS \"Crit\", count(*) FILTER (WHERE severity='high') AS \"High\", count(*) FILTER (WHERE severity='medium') AS \"Med\", count(*) FILTER (WHERE severity='low') AS \"Low\", round(max(age_days)::numeric,1) AS \"Oldest (days)\" FROM fact_vuln_findings_current WHERE has_kev AND site_label IN ($site) GROUP BY kev_cve_id ORDER BY \"KEV Due\" ASC NULLS LAST, \"Crit\" DESC LIMIT 100"
         }
       ]
     },
@@ -1596,6 +1639,49 @@
                 ]
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CVSS"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "steps": [
+                    {
+                      "color": "yellow",
+                      "value": null
+                    },
+                    {
+                      "color": "dark-yellow",
+                      "value": 4
+                    },
+                    {
+                      "color": "orange",
+                      "value": 7
+                    },
+                    {
+                      "color": "red",
+                      "value": 9
+                    }
+                  ]
+                }
+              }
+            ]
           }
         ]
       },
@@ -1604,7 +1690,7 @@
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT epss_cve_id AS \"CVE\", round((epss_score*100)::numeric,1) AS \"EPSS %\", round((epss_percentile*100)::numeric,1) AS \"Percentile\", count(*) AS \"Findings\", count(DISTINCT source_asset_id) AS \"Assets\", count(DISTINCT site_label) AS \"Sites\", count(*) FILTER (WHERE severity='critical') AS \"Crit\", count(*) FILTER (WHERE severity='high') AS \"High\", count(*) FILTER (WHERE severity='medium') AS \"Med\", count(*) FILTER (WHERE severity='low') AS \"Low\", round(max(age_days)::numeric,1) AS \"Oldest (days)\" FROM fact_vuln_findings_current WHERE site_label IN ($site) AND epss_score >= 0.5 AND NOT has_kev GROUP BY epss_cve_id, epss_score, epss_percentile ORDER BY epss_score DESC, \"Assets\" DESC LIMIT 100"
+          "rawSql": "SELECT epss_cve_id AS \"CVE\", round(max(cvss_score)::numeric,1) AS \"CVSS\", round((epss_score*100)::numeric,1) AS \"EPSS %\", round((epss_percentile*100)::numeric,1) AS \"Percentile\", count(*) AS \"Findings\", count(DISTINCT source_asset_id) AS \"Assets\", count(DISTINCT site_label) AS \"Sites\", count(*) FILTER (WHERE severity='critical') AS \"Crit\", count(*) FILTER (WHERE severity='high') AS \"High\", count(*) FILTER (WHERE severity='medium') AS \"Med\", count(*) FILTER (WHERE severity='low') AS \"Low\", count(*) FILTER (WHERE is_remote_no_auth) AS \"Remote/No-Auth\", round(max(age_days)::numeric,1) AS \"Oldest (days)\", ((count(*) FILTER (WHERE severity='critical')*10 + count(*) FILTER (WHERE severity='high')*5 + count(*) FILTER (WHERE severity='medium')*2 + count(*) FILTER (WHERE severity='low')*1) + ROUND((count(*) FILTER (WHERE severity='critical')*10 + count(*) FILTER (WHERE severity='high')*5 + count(*) FILTER (WHERE severity='medium')*2 + count(*) FILTER (WHERE severity='low')*1) * epss_score) + (count(*) FILTER (WHERE is_remote_no_auth) * 5))::int AS \"Priority\" FROM fact_vuln_findings_current WHERE site_label IN ($site) AND epss_score >= 0.5 AND NOT has_kev GROUP BY epss_cve_id, epss_score, epss_percentile ORDER BY \"Priority\" DESC LIMIT 100"
         }
       ]
     },
