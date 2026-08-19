@@ -12,7 +12,6 @@ set -euo pipefail
 
 # --- CONFIG ----------------------------------------------------
 APP_DIR="/root/tenable-tracker"
-VENV_BIN="$APP_DIR/venv/bin"
 LOG_DIR="$APP_DIR/logs"
 
 DB_NAME="tenable_trends"
@@ -44,6 +43,12 @@ WHERE snapshot_date::date < CURRENT_DATE - INTERVAL '${RETENTION_DAYS_DB} days';
 DELETE FROM daily_kev_metrics
 WHERE snapshot_date::date < CURRENT_DATE - INTERVAL '${RETENTION_DAYS_DB} days';
 
+DELETE FROM daily_epss_metrics
+WHERE snapshot_date::date < CURRENT_DATE - INTERVAL '${RETENTION_DAYS_DB} days';
+
+DELETE FROM daily_mttr_metrics
+WHERE snapshot_date::date < CURRENT_DATE - INTERVAL '${RETENTION_DAYS_DB} days';
+
 -- vuln_findings: only prune FIXED rows (OPEN/REOPENED rows reflect current
 -- vendor state and are refreshed/replaced by ingest_findings.py, not aged out).
 DELETE FROM vuln_findings
@@ -51,28 +56,22 @@ WHERE state = 'FIXED'
   AND last_fixed < now() - INTERVAL '${RETENTION_DAYS_FINDINGS} days';
 SQL
 
-# --- 2) Reclassify product families (to keep history clean) ----
-echo "[$TIMESTAMP] Reclassifying product families…"
-
-"$VENV_BIN/python3" "$APP_DIR/reclassify_product_families.py" \
-  --config "$APP_DIR/config.yaml"
-
-# --- 3) VACUUM / ANALYZE to keep bloat down --------------------
+# --- 2) VACUUM / ANALYZE to keep bloat down --------------------
 echo "[$TIMESTAMP] Running vacuumdb…"
 vacuumdb -U "$DB_USER" -d "$DB_NAME" -z
 
-# --- 4) Rotate app logs ----------------------------------------
+# --- 3) Rotate app logs ----------------------------------------
 echo "[$TIMESTAMP] Cleaning old app logs (> ${RETENTION_DAYS_LOGS} days)…"
 mkdir -p "$LOG_DIR"
 find "$LOG_DIR" -type f -name "*.log" -mtime +$RETENTION_DAYS_LOGS -delete
 
-# --- 5) Clean temp Tenable / export files ----------------------
+# --- 4) Clean temp Tenable / export files ----------------------
 # Adjust these paths if you stash temp export chunks anywhere
 echo "[$TIMESTAMP] Cleaning temp files (> ${RETENTION_DAYS_TMP} days)…"
 find "$APP_DIR" -maxdepth 2 -type f \( -name "*.tmp" -o -name "*.json" -o -name "*.gz" \) \
      -mtime +$RETENTION_DAYS_TMP -print -delete || true
 
-# --- 6) (Optional) journalctl trim – uncomment if needed -------
+# --- 5) (Optional) journalctl trim – uncomment if needed -------
 # echo "[$TIMESTAMP] Trimming systemd journal to 500M…"
 # journalctl --vacuum-size=500M
 
