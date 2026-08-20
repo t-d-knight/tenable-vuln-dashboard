@@ -601,18 +601,7 @@
               }
             ]
           },
-          "mappings": [
-            {
-              "type": "range",
-              "options": {
-                "from": 0,
-                "to": 999999999,
-                "result": {
-                  "text": "+${__value.text}"
-                }
-              }
-            }
-          ]
+          "mappings": []
         },
         "overrides": []
       },
@@ -748,18 +737,7 @@
                   }
                 ]
               },
-              "mappings": [
-                {
-                  "type": "range",
-                  "options": {
-                    "from": 0,
-                    "to": 999999999,
-                    "result": {
-                      "text": "+${__value.text}"
-                    }
-                  }
-                }
-              ]
+              "mappings": []
             },
             "overrides": []
           },
@@ -812,18 +790,7 @@
                   }
                 ]
               },
-              "mappings": [
-                {
-                  "type": "range",
-                  "options": {
-                    "from": 0,
-                    "to": 999999999,
-                    "result": {
-                      "text": "+${__value.text}"
-                    }
-                  }
-                }
-              ]
+              "mappings": []
             },
             "overrides": []
           },
@@ -876,18 +843,7 @@
                   }
                 ]
               },
-              "mappings": [
-                {
-                  "type": "range",
-                  "options": {
-                    "from": 0,
-                    "to": 999999999,
-                    "result": {
-                      "text": "+${__value.text}"
-                    }
-                  }
-                }
-              ]
+              "mappings": []
             },
             "overrides": []
           },
@@ -940,18 +896,7 @@
                   }
                 ]
               },
-              "mappings": [
-                {
-                  "type": "range",
-                  "options": {
-                    "from": 0,
-                    "to": 999999999,
-                    "result": {
-                      "text": "+${__value.text}"
-                    }
-                  }
-                }
-              ]
+              "mappings": []
             },
             "overrides": []
           },
